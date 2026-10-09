@@ -35,12 +35,8 @@ jobs:
           if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Frozen app timed out' }
           if ($process.ExitCode -ne 0) { throw 'Frozen app returned an error' }
           if (-not (Test-Path (Join-Path $data 'smoke-ok.txt'))) { throw 'Smoke success marker missing' }
-      - name: Assemble portable ZIP
-        shell: pwsh
-        run: |
-          Copy-Item README_RomanUrdu.txt, docs/FEATURES.md, docs/TEST_REPORT.md, docs/WINDOWS_BUILD.md, docs/THIRD_PARTY.md, LICENSE, config-template.json -Destination dist/ZeeNetworkMonitor
-          python -c "import json,platform,pathlib,os; pathlib.Path('dist/ZeeNetworkMonitor/BUILD_INFO.json').write_text(json.dumps({'version':'0.1.0','runner':platform.platform(),'python':platform.python_version(),'commit':os.getenv('GITHUB_SHA'),'frozen_smoke':'passed','windows10_hardware_test':'not performed'},indent=2))"
-          Compress-Archive -Path dist/ZeeNetworkMonitor -DestinationPath ZeeNetworkMonitor-Windows-x64.zip
+      - name: Assemble portable ZIP with Windows test report
+        run: python scripts/package_release.py
       - name: Upload downloadable portable package
         uses: actions/upload-artifact@v4
         with:
