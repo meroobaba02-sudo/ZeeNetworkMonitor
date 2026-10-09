@@ -10,7 +10,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-VERSION = '0.2.0'
+VERSION = '0.2.1'
 TYPES = ['WAN / Internet', 'Rocket M5 / wireless radio', 'Router', 'Switch', 'CCTV / NVR / camera', 'Server / monitoring agent', 'Other']
 
 

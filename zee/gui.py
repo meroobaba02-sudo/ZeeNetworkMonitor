@@ -246,7 +246,7 @@ class Window(QMainWindow):
         title=QLabel('ZEE  /  NETWORK MONITOR')
         title.setObjectName('title')
         title.setStyleSheet('font-size:20px; font-weight:700;')
-        subtitle=QLabel('Local network visibility • Lahore → Sargodha • Windows desktop')
+        subtitle=QLabel('Your network • Live device map • Windows desktop')
         subtitle.setObjectName('subtitle')
         titles.addWidget(title)
         titles.addWidget(subtitle)
@@ -773,7 +773,7 @@ class Window(QMainWindow):
         existing={d.wan for d in self.devices}
         for i in range(1,6):
             if i not in existing:
-                self.store.save(Device(name=f'WAN-{i}',kind=TYPES[0],location='Lahore',wan=i,enabled=False,notes='Configure a verified WAN-specific target/path. Reachability only until verified.'))
+                self.store.save(Device(name=f'WAN-{i}',kind=TYPES[0],location='',wan=i,enabled=False,notes='Configure a verified WAN-specific target/path. Reachability only until verified.'))
         self.reload()
 
     def export(self,filename,rows,fields):

@@ -8,17 +8,8 @@ from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButto
 from .core import diagnoses
 
 COLORS={'Online':'#28e3a0','Warning':'#ffbd4b','No reply':'#ff6478','Unknown':'#9aacc0','Checking':'#59c9ff','Disabled':'#63768d','Unconfigured':'#9aacc0','Probe error':'#ffbd4b'}
-# Layout anchors only. These are neither coordinates nor actual monitored stations.
-ANCHORS={'lahore':(.79,.77),'sheikhupura':(.62,.53),'hafizabad':(.46,.29),'sargodha':(.20,.37)}
-
 def auto_position(d,index):
     if d.map_x is not None and d.map_y is not None:return d.map_x,d.map_y
-    text=(d.location+' '+d.name).lower()
-    for name,pos in ANCHORS.items():
-        if name in text:
-            import hashlib
-            angle=(int(hashlib.sha256(d.id.encode()).hexdigest()[:8],16)%628)/100
-            return max(.08,min(.92,pos[0]+.075*math.cos(angle))),max(.1,min(.88,pos[1]+.075*math.sin(angle)))
     return .15+(index%4)*.20,.16+(index//4%4)*.20
 
 class MapCanvas(QWidget):
@@ -77,9 +68,6 @@ class MapCanvas(QWidget):
         river.cubicTo(self.point(.38,.18),self.point(-.05,.38),self.point(.15,.62))
         river.cubicTo(self.point(.30,.75),self.point(.38,.86),self.point(.29,1.1))
         p.setPen(QPen(QColor('#125064'),12*self.zoom));p.drawPath(river)
-        for name,(x,y) in ANCHORS.items():
-            p.setPen(QColor('#6e8b96'));p.setFont(QFont('Segoe UI',13,QFont.Bold))
-            pt=self.point(x,y);p.drawText(QPointF(pt.x()-38,pt.y()+54),name.title())
         points={d.id:self.point(*auto_position(d,i)) for i,d in enumerate(self.devices)}
         states={d.id:self.window.state(d) for d in self.devices}
         for d in self.devices:
