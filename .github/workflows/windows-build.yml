@@ -1,0 +1,59 @@
+name: Build Windows portable application
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Install pinned dependencies
+        run: python -m pip install -r requirements-build.txt
+      - name: Syntax and unit / GUI tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -m compileall -q main.py zee tests
+          python -m pytest -q --junitxml=windows-tests.xml
+      - name: Build portable EXE
+        run: python -m PyInstaller --clean --noconfirm ZeeNetworkMonitor.spec
+      - name: Frozen GUI startup and shutdown smoke test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        shell: pwsh
+        run: |
+          $data = Join-Path $env:RUNNER_TEMP 'zee-smoke'
+          $exe = Join-Path $PWD 'dist/ZeeNetworkMonitor/ZeeNetworkMonitor.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--smoke-test', '--data-dir', $data) -PassThru
+          if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Frozen app timed out' }
+          if ($process.ExitCode -ne 0) { throw 'Frozen app returned an error' }
+          if (-not (Test-Path (Join-Path $data 'smoke-ok.txt'))) { throw 'Smoke success marker missing' }
+      - name: Assemble portable ZIP
+        shell: pwsh
+        run: |
+          Copy-Item README_RomanUrdu.txt, docs/FEATURES.md, docs/TEST_REPORT.md, docs/WINDOWS_BUILD.md, docs/THIRD_PARTY.md, LICENSE, config-template.json -Destination dist/ZeeNetworkMonitor
+          python -c "import json,platform,pathlib,os; pathlib.Path('dist/ZeeNetworkMonitor/BUILD_INFO.json').write_text(json.dumps({'version':'0.1.0','runner':platform.platform(),'python':platform.python_version(),'commit':os.getenv('GITHUB_SHA'),'frozen_smoke':'passed','windows10_hardware_test':'not performed'},indent=2))"
+          Compress-Archive -Path dist/ZeeNetworkMonitor -DestinationPath ZeeNetworkMonitor-Windows-x64.zip
+      - name: Upload downloadable portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZeeNetworkMonitor-Windows-x64
+          path: ZeeNetworkMonitor-Windows-x64.zip
+          retention-days: 30
+      - name: Upload test and build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-build-diagnostics
+          path: |
+            windows-tests.xml
+            build/ZeeNetworkMonitor/warn-ZeeNetworkMonitor.txt
+            ${{ runner.temp }}/zee-smoke/diagnostic.log
+          if-no-files-found: ignore

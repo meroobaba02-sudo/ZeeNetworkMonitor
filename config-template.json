@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "documentation_only": true,
+  "note": "Use GUI Add device / Add 5 unconfigured WAN templates; this file is not auto-imported.",
+  "device_example": {
+    "name": "WAN-1", "host": "", "kind": "WAN / Internet", "location": "Lahore",
+    "wan": 1, "parent": "", "next_hop": "", "enabled": false,
+    "interval": 10, "timeout": 2000, "alerts": true,
+    "failure_threshold": 3, "latency_threshold": 150, "source": ""
+  }
+}
