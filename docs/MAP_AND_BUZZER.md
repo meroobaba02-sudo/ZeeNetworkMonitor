@@ -1,3 +1,5 @@
+See TOWERS_AND_REGION_MAP.md for v0.3.0 physical tower grouping and geographic map; the schematic notes below describe v0.2 only.
+
 # v0.2.1 — map dashboard and fault buzzer
 
 The desktop now opens on the map. The design follows the approved dark navy/emerald preview with left navigation, four health cards, colored device markers/parent links, a selected-device panel, measured history, a WAN list and recent events.

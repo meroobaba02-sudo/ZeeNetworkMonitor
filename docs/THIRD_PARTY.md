@@ -8,3 +8,6 @@ This source code's MIT license does not replace third-party license terms.
 - PyInstaller: GPLv2 with bootloader distribution exception, https://pyinstaller.org/en/stable/license.html
 
 Portable folder packaging retains separate runtime libraries. Distributing a public/commercial release requires preserving the applicable notices and complying with each dependency's terms. Tests/pytest are build-time only. This package is an initial personal monitoring release, not a signed commercial installer.
+
+
+Map data © OpenStreetMap contributors, licensed ODbL 1.0. https://www.openstreetmap.org/copyright and https://opendatacommons.org/licenses/odbl/1-0/ . Road/river/place data fetched from Overpass; no raster tiles downloaded.

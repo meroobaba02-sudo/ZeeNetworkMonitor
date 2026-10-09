@@ -10,7 +10,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-VERSION = '0.2.1'
+VERSION = '0.3.0'
 TYPES = ['WAN / Internet', 'Rocket M5 / wireless radio', 'Router', 'Switch', 'CCTV / NVR / camera', 'Server / monitoring agent', 'Other']
 
 
@@ -50,10 +50,14 @@ class Device:
     failure_threshold: int = 3
     source: str = ''
     profile: str = ''
+    station_id: str = ''
+    dish_side: str = 'Left'
     map_x: float | None = None
     map_y: float | None = None
 
     def validate(self):
+        if self.dish_side not in ('Left', 'Right'):
+            raise ValueError('Dish side must be Left or Right.')
         self.name = self.name.strip()
         if not self.name:
             raise ValueError('Device name is required.')
@@ -81,6 +85,29 @@ class Device:
             raise ValueError('A device cannot link to itself.')
 
 
+@dataclass
+class Station:
+    id: str = ''
+    name: str = ''
+    map_x: float = .5
+    map_y: float = .5
+    latitude: float | None = None
+    longitude: float | None = None
+
+    def validate(self):
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError('Tower name is required.')
+        if not 0 <= self.map_x <= 1 or not 0 <= self.map_y <= 1:
+            raise ValueError('Map position must be 0–100 percent.')
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError('Enter both GPS coordinates.')
+        if self.latitude is not None and not (-85 <= self.latitude <= 85 and -180 <= self.longitude <= 180):
+            raise ValueError('Invalid GPS coordinates.')
+        if not self.id:
+            self.id = str(uuid.uuid4())
+
+
 class Store:
     """Owned by the GUI/main thread. Workers never touch this connection."""
     def __init__(self, path):
@@ -88,27 +115,54 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(self.path)
         schema = self.db.execute('PRAGMA user_version').fetchone()[0]
-        if schema not in (0, 1):
+        if schema not in (0, 1, 2):
             self.db.close()
-            raise ValueError('Unsupported database schema. Restore a v1 backup or use the matching app version.')
+            raise ValueError('Unsupported database schema. Use the matching app version or restore a compatible backup.')
+        if schema == 1:
+            target = sqlite3.connect(str(self.path)+'.pre-v030.bak')
+            try: self.db.backup(target)
+            finally: target.close()
         self.db.row_factory = sqlite3.Row
         self.db.executescript('''
         PRAGMA journal_mode=WAL;
+        CREATE TABLE IF NOT EXISTS stations(id TEXT PRIMARY KEY, data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY, data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS samples(id INTEGER PRIMARY KEY, device TEXT, at REAL, success INTEGER, latency REAL, error TEXT);
         CREATE INDEX IF NOT EXISTS sample_device_time ON samples(device, at);
         CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, device TEXT, at REAL, kind TEXT, message TEXT);
         CREATE INDEX IF NOT EXISTS event_time ON events(at);
-        PRAGMA user_version=1;
+        PRAGMA user_version=2;
         ''')
         self.db.commit()
+
+    def stations(self):
+        return [Station(**json.loads(r[0])) for r in self.db.execute('SELECT data FROM stations ORDER BY rowid')]
+
+    def save_station(self, station):
+        station.validate()
+        with self.db:
+            self.db.execute('INSERT OR REPLACE INTO stations VALUES(?,?)', (station.id,json.dumps(asdict(station))))
+            self.event(station.id,'config','Tower saved: '+station.name)
+
+    def delete_station(self, id):
+        with self.db:
+            for d in self.devices():
+                if d.station_id == id:
+                    d.station_id = ''
+                    self.db.execute('UPDATE devices SET data=? WHERE id=?',(json.dumps(asdict(d)),d.id))
+            self.db.execute('DELETE FROM stations WHERE id=?',(id,))
+            self.event(id,'config','Tower removed; radios and history retained')
 
     def devices(self):
         return [Device(**json.loads(r[0])) for r in self.db.execute('SELECT data FROM devices ORDER BY rowid')]
 
     def save(self, device):
         device.validate()
+        if device.station_id and device.station_id not in {s.id for s in self.stations()}:
+            raise ValueError('Selected tower no longer exists.')
+        if device.station_id and sum(d.station_id == device.station_id and d.id != device.id for d in self.devices()) >= 4:
+            raise ValueError('A tower supports up to four radios/devices. Create another tower for more.')
         devices = {d.id: d for d in self.devices()}
         devices[device.id] = device
         for ref in (device.parent, device.next_hop):

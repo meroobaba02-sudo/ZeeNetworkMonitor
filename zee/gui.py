@@ -43,7 +43,7 @@ def button(text, fn, primary=False):
     return b
 
 class DeviceDialog(QDialog):
-    def __init__(self, devices, device=None, parent=None):
+    def __init__(self, devices, device=None, parent=None, stations=None):
         super().__init__(parent)
         self.setWindowTitle('Edit device' if device else 'Add device')
         self.resize(590,710)
@@ -64,6 +64,13 @@ class DeviceDialog(QDialog):
         kind.setCurrentText(values['kind'])
         self.fields['kind'] = kind
         form.addRow('Device type',kind)
+        tower=QComboBox();tower.addItem('Standalone device','')
+        for station in stations or []: tower.addItem(station.name,station.id)
+        tower.setCurrentIndex(max(0,tower.findData(values['station_id'])))
+        self.fields['station_id']=tower;form.addRow('Physical tower',tower)
+        side=QComboBox();side.addItem('Left','Left');side.addItem('Right','Right')
+        side.setCurrentIndex(max(0,side.findData(values['dish_side'])))
+        self.fields['dish_side']=side;form.addRow('Dish side (both transmit / receive)',side)
         for key,title in [('parent','Parent / previous hop'),('next_hop','Next hop (annotation)')]:
             combo = QComboBox()
             combo.addItem('None','')
@@ -635,7 +642,7 @@ class Window(QMainWindow):
             self.edit_device(d)
 
     def edit_device(self,d):
-        dialog=DeviceDialog(self.devices,d,self)
+        dialog=DeviceDialog(self.devices,d,self,stations=self.store.stations())
         if dialog.exec()==QDialog.Accepted:
             try:
                 value=dialog.device()
@@ -801,6 +808,7 @@ class Window(QMainWindow):
         self.export('events.csv',self.event_rows(2147483647),['id','device','at','kind','message'])
 
     def closeEvent(self,event):
+        self.map_page.shutdown()
         self.buzzer.shutdown()
         self.queue_timer.stop()
         self.view_timer.stop()
