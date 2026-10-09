@@ -10,7 +10,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-VERSION = '0.1.0'
+VERSION = '0.2.0'
 TYPES = ['WAN / Internet', 'Rocket M5 / wireless radio', 'Router', 'Switch', 'CCTV / NVR / camera', 'Server / monitoring agent', 'Other']
 
 
@@ -50,6 +50,8 @@ class Device:
     failure_threshold: int = 3
     source: str = ''
     profile: str = ''
+    map_x: float | None = None
+    map_y: float | None = None
 
     def validate(self):
         self.name = self.name.strip()
@@ -64,6 +66,10 @@ class Device:
             raise ValueError('Interval must be 1–3600 seconds; timeout 100–10000 ms.')
         if not 0 <= self.wan <= 99 or not 1 <= self.failure_threshold <= 100 or not 1 <= self.latency_threshold <= 60000:
             raise ValueError('Invalid WAN number or alert threshold.')
+        if (self.map_x is None) != (self.map_y is None):
+            raise ValueError('Both map positions must be set together.')
+        if self.map_x is not None and not (0 <= self.map_x <= 1 and 0 <= self.map_y <= 1):
+            raise ValueError('Map position must be between 0 and 100 percent.')
         if self.source:
             if ipaddress.ip_address(self.source).version != 6:
                 raise ValueError('Windows ping source binding supports IPv6 only. For IPv4 use verified OS routing or a future agent.')

@@ -8,13 +8,13 @@ from PySide6.QtGui import QColor, QPainter, QPen, QFont, QPainterPath
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit, QComboBox,
     QTabWidget, QDialog, QFormLayout, QSpinBox, QCheckBox, QDialogButtonBox, QMessageBox,
-    QFileDialog, QTextEdit, QSystemTrayIcon, QStyle, QScrollArea, QDateTimeEdit, QSplitter)
+    QFileDialog, QTextEdit, QSystemTrayIcon, QStyle, QScrollArea, QDateTimeEdit, QSplitter, QDoubleSpinBox)
 from .core import Device, Store, TYPES, VERSION, diagnoses, export_csv, outages
 from .engine import Engine
 
 COLORS = {'Online':'#36d399','Warning':'#fbbf24','No reply':'#fb7185','Unknown':'#fbbf24','Checking':'#60a5fa','Disabled':'#94a3b8','Probe error':'#fbbf24','Unconfigured':'#fbbf24'}
 STYLE = '''
-QWidget { background:#101827; color:#e2e8f0; font-family:Segoe UI; font-size:12px; }
+QWidget { background:#071827; color:#e2e8f0; font-family:Segoe UI; font-size:12px; }
 QMainWindow, QDialog { background:#101827; }
 QLabel#title { font-size:26px; font-weight:700; }
 QLabel#subtitle { color:#94a3b8; }
@@ -84,6 +84,13 @@ class DeviceDialog(QDialog):
             check.setChecked(values[key])
             self.fields[key] = check
             form.addRow(check)
+        self.map_enabled = QCheckBox('Use custom map position (or drag the marker)')
+        self.map_enabled.setChecked(self.original.map_x is not None)
+        form.addRow(self.map_enabled)
+        for key,title in [('map_x','Map X (%)'),('map_y','Map Y (%)')]:
+            spin=QDoubleSpinBox();spin.setRange(0,100);spin.setDecimals(1)
+            spin.setValue((values[key] if values[key] is not None else .5)*100)
+            self.fields[key]=spin;form.addRow(title,spin)
         help_text = QLabel('WAN without source binding: host reachability only. IPv4 WAN independence needs verified Windows routing; this app does not create routes.\nProfile reference is reserved; no credential collection or radio telemetry in this release.')
         help_text.setWordWrap(True)
         form.addRow(help_text)
@@ -97,7 +104,9 @@ class DeviceDialog(QDialog):
     def device(self):
         values = asdict(self.original)
         for key,w in self.fields.items():
-            if isinstance(w,QLineEdit):
+            if isinstance(w,QDoubleSpinBox):
+                values[key] = w.value()/100 if self.map_enabled.isChecked() else None
+            elif isinstance(w,QLineEdit):
                 values[key] = w.text().strip()
             elif isinstance(w,QSpinBox):
                 values[key] = w.value()
@@ -134,7 +143,7 @@ class LatencyGraph(QWidget):
         p.drawRect(area)
         if not self.rows:
             p.setPen(QColor('#94a3b8'))
-            p.drawText(self.rect(),Qt.AlignCenter,'No samples yet — select a device and run a ping')
+            p.drawText(self.rect().adjusted(15,15,-15,-15),Qt.AlignCenter|Qt.TextWordWrap,'No samples yet — select a device and run a ping')
             return
         values=[r['latency'] for r in self.rows if r['success'] and r['latency'] is not None]
         ceiling=max(10,max(values,default=0)*1.15)
@@ -143,8 +152,8 @@ class LatencyGraph(QWidget):
         p.setPen(QColor('#94a3b8'))
         p.drawText(5,30,f'{ceiling:.0f} ms')
         p.drawText(10,int(area.bottom()),'0 ms')
-        p.drawText(58,self.height()-12,stamp(first))
-        p.drawText(max(58,self.width()-175),self.height()-12,stamp(last))
+        p.drawText(58,self.height()-12,time.strftime('%H:%M',time.localtime(first)) if self.width()<400 else stamp(first))
+        p.drawText(max(58,self.width()-(65 if self.width()<400 else 175)),self.height()-12,time.strftime('%H:%M',time.localtime(last)) if self.width()<400 else stamp(last))
         previous=None
         for r in self.rows:
             x=area.left()+(r['at']-first)/spread*area.width()
@@ -226,7 +235,7 @@ class Window(QMainWindow):
         self.requested=set()
         self.devices=[]
         self.setWindowTitle(f'Zee Network Monitor • {VERSION}')
-        self.resize(1360,870)
+        self.resize(1360,790)
         self.setMinimumSize(980,650)
         root=QWidget()
         self.setCentralWidget(root)
@@ -236,6 +245,7 @@ class Window(QMainWindow):
         titles=QVBoxLayout()
         title=QLabel('ZEE  /  NETWORK MONITOR')
         title.setObjectName('title')
+        title.setStyleSheet('font-size:20px; font-weight:700;')
         subtitle=QLabel('Local network visibility • Lahore → Sargodha • Windows desktop')
         subtitle.setObjectName('subtitle')
         titles.addWidget(title)
@@ -245,12 +255,27 @@ class Window(QMainWindow):
         self.start_button=button('▶ Start monitoring',self.toggle,True)
         head.addWidget(self.start_button)
         head.addWidget(button('Ping all now',self.ping_all))
+        from .buzzer import Buzzer
+        self.buzzer=Buzzer(self,enabled=self.store.setting('buzzer_enabled',True))
+        self.buzzer_button=QPushButton();self.buzzer_button.setCheckable(True)
+        self.buzzer_button.setChecked(self.buzzer.enabled)
+        self.buzzer_button.toggled.connect(self.set_buzzer)
+        head.addWidget(self.buzzer_button)
+        head.addWidget(button('Silence',self.silence_buzzer))
+        self.alarm_status=QLabel('Alarm clear');head.addWidget(self.alarm_status)
+        self.buzzer.changed.connect(self.buzzer_status)
+        self.buzzer_status()
         layout.addLayout(head)
         self.summary=QLabel()
         self.summary.setObjectName('card')
-        layout.addWidget(self.summary)
+        self.summary.hide()
         self.tabs=QTabWidget()
-        layout.addWidget(self.tabs)
+        self.tabs.tabBar().hide()
+        content=QHBoxLayout()
+        self.navigation=QVBoxLayout()
+        content.addLayout(self.navigation)
+        content.addWidget(self.tabs,1)
+        layout.addLayout(content,1)
         dashboard=QWidget()
         dash=QVBoxLayout(dashboard)
         tools=QHBoxLayout()
@@ -291,6 +316,17 @@ class Window(QMainWindow):
         self.topology_page()
         self.events_page()
         self.settings_page()
+        from .mapview import MapDashboard
+        self.map_page=MapDashboard(self)
+        self.tabs.insertTab(0,self.map_page,'Map')
+        self.nav_buttons=[]
+        for i,text in enumerate(['◉  Map','▤  Devices / WANs','◷  History','⌁  Topology','♧  Alerts','⚙  Settings']):
+            b=QPushButton(text);b.setObjectName('nav');b.setCheckable(True);b.setFixedWidth(148)
+            b.clicked.connect(lambda checked=False,index=i:self.tabs.setCurrentIndex(index))
+            self.navigation.addWidget(b);self.nav_buttons.append(b)
+        self.navigation.addStretch()
+        self.tabs.currentChanged.connect(self.highlight_nav)
+        self.tabs.setCurrentIndex(0);self.highlight_nav(0)
         self.tray=QSystemTrayIcon(self.style().standardIcon(QStyle.SP_ComputerIcon),self)
         self.tray.setToolTip('Zee Network Monitor')
         if QSystemTrayIcon.isSystemTrayAvailable():
@@ -384,7 +420,9 @@ class Window(QMainWindow):
         self.notifications=QCheckBox('Desktop notifications (when system tray is available)')
         self.notifications.setChecked(self.store.setting('notifications',True))
         self.beep=QCheckBox('Beep on alert')
-        self.beep.setChecked(self.store.setting('beep',False))
+        self.beep.setChecked(self.buzzer.enabled)
+        self.beep.setText('Enable repeating fault buzzer')
+        self.beep.toggled.connect(self.buzzer_button.setChecked)
         self.recovery=QCheckBox('Recovery notifications')
         self.recovery.setChecked(self.store.setting('recovery',True))
         self.retention=QSpinBox()
@@ -393,6 +431,7 @@ class Window(QMainWindow):
         for w in (self.notifications,self.beep,self.recovery):
             form.addRow(w)
         form.addRow('History retention (days)',self.retention)
+        form.addRow(button('Test buzzer (1 second)',self.test_buzzer))
         form.addRow(button('Save settings',self.save_settings,True))
         form.addRow(button('Backup database',self.backup))
         form.addRow(button('Add 5 unconfigured WAN templates',self.wan_templates))
@@ -429,10 +468,47 @@ class Window(QMainWindow):
                     self.latest[d.id]=dict(row)
         self.render_all()
 
+    def highlight_nav(self,index):
+        for i,b in enumerate(self.nav_buttons):b.setChecked(i==index)
+
+    def set_buzzer(self,enabled):
+        self.store.set_setting('buzzer_enabled',enabled)
+        self.buzzer.set_enabled(enabled)
+        if hasattr(self,'beep'):
+            self.beep.blockSignals(True);self.beep.setChecked(enabled);self.beep.blockSignals(False)
+
+    def silence_buzzer(self):
+        self.buzzer.silence()
+        self.store.event('','alert_control','Current alarm incidents silenced')
+
+    def test_buzzer(self):
+        self.buzzer.sound(True)
+        def finish():
+            self.buzzer.sound(False)
+            if self.buzzer.playing:self.buzzer.sound(True)
+        QTimer.singleShot(1000,self,finish)
+
+    def buzzer_status(self):
+        self.buzzer_button.setText('♪ Buzzer ON' if self.buzzer.enabled else '♪ Buzzer OFF')
+        self.buzzer_button.setStyleSheet('color:#28e3a0' if self.buzzer.enabled else 'color:#9aacc0')
+        self.alarm_status.setText('FAULT ALARM' if self.buzzer.playing else ('Silenced' if self.buzzer.active else 'Alarm clear'))
+        self.alarm_status.setStyleSheet('color:#ff6478' if self.buzzer.playing else 'color:#9aacc0')
+
+    def refresh_map(self):
+        if hasattr(self,'map_page'):self.map_page.refresh()
+        active={}
+        for d in self.devices:
+            state=self.state(d)
+            if state=='Checking':state=self.states.get(d.id,'Unknown')
+            if d.alerts and state in ('Warning','No reply') and self.alerted.get(d.id):
+                active[d.id]=self.alerted[d.id]
+        self.buzzer.update(active)
+
     def refresh_states(self):
         self.render_table()
         self.topology.refresh(self.devices,{d.id:self.state(d) for d in self.devices})
         self.render_diagnosis()
+        self.refresh_map()
 
     def state(self,d):
         if not d.enabled:
@@ -464,6 +540,7 @@ class Window(QMainWindow):
         self.render_events()
         self.topology.refresh(self.devices,{d.id:self.state(d) for d in self.devices})
         self.render_diagnosis()
+        self.refresh_map()
 
     def render_diagnosis(self):
         items=diagnoses(self.devices,{d.id:self.state(d) for d in self.devices})
@@ -581,6 +658,7 @@ class Window(QMainWindow):
         if self.engine.running:
             self.engine.stop()
             self.requested.clear()
+            self.buzzer.silence()
             self.start_button.setText('▶ Start monitoring')
             self.store.event('','application','Periodic monitoring stopped')
         else:
@@ -632,7 +710,7 @@ class Window(QMainWindow):
 
     def result(self,id,snapshot,result):
         current=next((d for d in self.devices if d.id==id),None)
-        if current is None or asdict(current)!=asdict(snapshot):
+        if current is None or {k:v for k,v in asdict(current).items() if k not in ('map_x','map_y')}!={k:v for k,v in asdict(snapshot).items() if k not in ('map_x','map_y')}:
             return # Ignore an obsolete probe after edit/delete.
         previous=self.states.get(id,'Unknown')
         if result.infrastructure_error:
@@ -667,8 +745,7 @@ class Window(QMainWindow):
         self.store.event(id,'alert',name+': '+message)
         if self.notifications.isChecked() and QSystemTrayIcon.isSystemTrayAvailable():
             self.tray.showMessage('Zee Network Monitor',name+': '+message,QSystemTrayIcon.Information,5000)
-        if self.beep.isChecked():
-            QApplication.beep()
+
 
     def save_settings(self):
         for key,value in [('notifications',self.notifications.isChecked()),('beep',self.beep.isChecked()),('recovery',self.recovery.isChecked()),('retention',self.retention.value())]:
@@ -724,6 +801,7 @@ class Window(QMainWindow):
         self.export('events.csv',self.event_rows(2147483647),['id','device','at','kind','message'])
 
     def closeEvent(self,event):
+        self.buzzer.shutdown()
         self.queue_timer.stop()
         self.view_timer.stop()
         self.maintenance.stop()
@@ -733,3 +811,11 @@ class Window(QMainWindow):
         self.tray.hide()
         self.store.close()
         event.accept()
+
+STYLE += '''
+QLabel#mapCard { background:#0c2135; border:1px solid #1d3b51; border-radius:8px; padding:13px; font-size:15px; font-weight:600; }
+QLabel#mapEvents { background:#0b2034; border:1px solid #1d3b51; border-radius:8px; padding:11px; color:#acc7dd; }
+QLabel#detailTitle {font-size:20px; font-weight:700;}
+QPushButton#nav {text-align:left; padding:12px; border:0; background:#0a2033;}
+QPushButton#nav:checked {background:#105369; border-left:3px solid #25e3aa;}
+'''

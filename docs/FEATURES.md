@@ -26,3 +26,10 @@
 | Windows 10 compatibility | Target only; real Windows 10 launch, live ICMP, real-hardware DLL and notification checks still required |
 
 No hard-coded user network addresses, synthetic live results, credentials or device write commands are included. Five-WAN reachability does not claim five independent Internet paths.
+
+## v0.2.0 additions
+
+- Map-first desktop with sidebar, live status cards, draggable saved markers, selected-device Ping/History/Edit, zoom/pan and recent events.
+- Offline illustrative layout; no satellite or accurate GPS coordinates. Actual hops remain configurable.
+- Bundled repeating fault buzzer, immediate saved ON/OFF, Silence current incidents and sound test.
+- Windows sound uses async WAV playback; real laptop speaker output remains untested.
