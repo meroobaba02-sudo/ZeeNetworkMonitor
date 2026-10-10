@@ -17,11 +17,11 @@ def find_route(remote,local):
         r=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',command],capture_output=True,text=True,errors='replace',timeout=20,creationflags=subprocess.CREATE_NO_WINDOW)
         if r.returncode:raise PathUnavailable('Windows could not verify this Internet route.')
         rows=json.loads(r.stdout.lstrip('\ufeff'));rows=rows if isinstance(rows,list) else [rows]
-        address=next(x for x in rows if x.get('IPAddress'))
-        route=next(x for x in rows if x.get('NextHop'))
+        address=next(x for x in rows if x.get('IPAddress') and literal(x['IPAddress'])==local)
+        route=next(x for x in rows if x.get('NextHop') and x.get('InterfaceIndex')==address['InterfaceIndex'])
         if literal(address['IPAddress'])!=local or address['InterfaceIndex']!=route['InterfaceIndex']:raise PathUnavailable('Windows source/interface does not match the connected socket.')
         return {'source':local,'remote':remote,'gateway':str(ipaddress.ip_address(route['NextHop'])),'interface':route['InterfaceIndex']}
-    except (subprocess.TimeoutExpired,KeyError,StopIteration,json.JSONDecodeError) as e:raise PathUnavailable('Windows route check unavailable; no speed payload sent.') from e
+    except (OSError,subprocess.TimeoutExpired,KeyError,StopIteration,json.JSONDecodeError) as e:raise PathUnavailable('Windows route check unavailable; no speed payload sent.') from e
 
 def checked_factory(gateway,evidence):
     gateway=literal(gateway)
@@ -30,7 +30,7 @@ def checked_factory(gateway,evidence):
         try:
             c.connect()
             row=find_route(c.sock.getpeername()[0],c.sock.getsockname()[0])
-            if row['gateway']!=gateway:raise PathUnavailable('Wrong Internet gateway: Windows selected '+row['gateway']+'; this modem requires '+gateway+'.')
+            if row['gateway']!=gateway:raise PathUnavailable('Wrong Internet gateway: Windows selected '+row['gateway']+'; this modem requires '+gateway+'. Configure the Windows route to this modem, or correct the gateway field. A management IP may differ from the Internet gateway.')
             c.auto_open=0  # Never silently reconnect after checking this socket.
             evidence.append(row)
             return c,path

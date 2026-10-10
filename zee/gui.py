@@ -293,7 +293,7 @@ class Window(PageControls,QMainWindow):
         head.addWidget(self.start_button)
         head.addWidget(button('Ping all now',self.ping_all))
         from .buzzer import Buzzer
-        self.buzzer=Buzzer(self,enabled=self.store.setting('buzzer_enabled',True))
+        self.buzzer=Buzzer(self,enabled=self.store.setting('buzzer_enabled',True),delay_seconds=self.store.setting('alarm_delay_seconds',15))
         self.buzzer_button=QPushButton();self.buzzer_button.setCheckable(True)
         self.buzzer_button.setChecked(self.buzzer.enabled)
         self.buzzer_button.toggled.connect(self.set_buzzer)
@@ -555,6 +555,7 @@ class Window(PageControls,QMainWindow):
         self.beep=QCheckBox('Enable repeating fault buzzer');self.beep.setChecked(self.buzzer.enabled);self.beep.toggled.connect(self.buzzer_button.setChecked)
         self.recovery=QCheckBox('Recovery notifications');self.recovery.setChecked(self.store.setting('recovery',True))
         for widget in (self.notifications,self.beep,self.recovery):form.addRow(widget)
+        self.alarm_delay=QSpinBox();self.alarm_delay.setRange(0,300);self.alarm_delay.setValue(self.buzzer.delay_seconds);form.addRow('Buzzer delay after confirmed fault (seconds)',self.alarm_delay)
         from .retention import history_hours
         self.retention=QSpinBox();self.retention.setRange(1,87600);self.retention.setValue(history_hours(self.store));form.addRow('Detailed history retention (hours)',self.retention)
         self.auto_cleanup=QCheckBox('Automatic background cleanup');self.auto_cleanup.setChecked(self.store.setting('auto_cleanup',True));form.addRow(self.auto_cleanup)
@@ -673,7 +674,7 @@ class Window(PageControls,QMainWindow):
     def buzzer_status(self):
         self.buzzer_button.setText('♪ Buzzer ON' if self.buzzer.enabled else '♪ Buzzer OFF')
         self.buzzer_button.setStyleSheet('color:'+status_color('Online' if self.buzzer.enabled else 'Unknown',self.ui_theme if hasattr(self,'ui_theme') else 'dark'))
-        self.alarm_status.setText('FAULT ALARM' if self.buzzer.playing else ('Silenced' if self.buzzer.active else 'Alarm clear'))
+        self.alarm_status.setText('FAULT ALARM' if self.buzzer.playing else ('Alarm pending / muted' if self.buzzer.active else 'Alarm clear'))
         self.alarm_status.setStyleSheet('color:'+status_color('No reply' if self.buzzer.playing else 'Unknown',self.ui_theme if hasattr(self,'ui_theme') else 'dark'))
 
     def refresh_map(self,draw=True):
@@ -1027,6 +1028,8 @@ class Window(PageControls,QMainWindow):
 
 
     def save_settings(self):
+        self.store.set_setting('alarm_delay_seconds',self.alarm_delay.value())
+        self.buzzer.set_delay(self.alarm_delay.value())
         for key,value in [('notifications',self.notifications.isChecked()),('beep',self.beep.isChecked()),('recovery',self.recovery.isChecked()),('detail_hours',self.retention.value()),('auto_cleanup',self.auto_cleanup.isChecked())]:
             self.store.set_setting(key,value)
         self.store.event('','config','Alert and retention settings saved')

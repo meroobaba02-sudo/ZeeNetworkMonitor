@@ -79,7 +79,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         shell: pwsh
         run: |
-          $setup = Join-Path $PWD 'release/ZeeNetworkMonitor-Setup-Windows-v0.4.16.exe'
+          $setup = Join-Path $PWD 'release/ZeeNetworkMonitor-Setup-Windows-v0.4.17.exe'
           $install = Join-Path $env:LOCALAPPDATA 'Programs/ZeeNetworkMonitor'
           $data = Join-Path $env:LOCALAPPDATA 'ZeeNetworkMonitor'
           New-Item -ItemType Directory -Force $data | Out-Null
@@ -112,7 +112,7 @@ jobs:
         with:
           name: ZeeNetworkMonitor-Setup-Windows
           path: |
-            release/ZeeNetworkMonitor-Setup-Windows-v0.4.16.exe
+            release/ZeeNetworkMonitor-Setup-Windows-v0.4.17.exe
             release/INSTALLER_TEST_REPORT.txt
             release/CUSTOMER_BUILD_TEST_REPORT.txt
           if-no-files-found: error
@@ -120,26 +120,26 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeNetworkMonitor-Portable-Windows
-          path: release/ZeeNetworkMonitor-Portable-Windows-v0.4.16.zip
+          path: release/ZeeNetworkMonitor-Portable-Windows-v0.4.17.zip
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeLicenseManager-Admin
-          path: release/ZeeLicenseManager-Admin-v0.4.16.zip
+          path: release/ZeeLicenseManager-Admin-v0.4.17.zip
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeAdminStudio-Owner
-          path: release/ZeeAdminStudio-Owner-v0.4.16.zip
+          path: release/ZeeAdminStudio-Owner-v0.4.17.zip
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeAdminStudio-Setup-Windows
           path: |
-            release/ZeeAdminStudio-Setup-Windows-v0.4.16.exe
+            release/ZeeAdminStudio-Setup-Windows-v0.4.17.exe
             release/STUDIO_INSTALLER_TEST_REPORT.txt
           if-no-files-found: error
           retention-days: 30

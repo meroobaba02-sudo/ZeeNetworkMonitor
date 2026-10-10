@@ -53,7 +53,7 @@ def test_map_position_persistence_old_config_compatible(app,tmp_path):
 
 
 def test_fault_threshold_mute_saved_and_restart(app,tmp_path):
-    s=Store(tmp_path/'db');d=Device(name='Radio',host='127.0.0.1',failure_threshold=2);s.save(d)
+    s=Store(tmp_path/'db');s.set_setting('alarm_delay_seconds',0);d=Device(name='Radio',host='127.0.0.1',failure_threshold=2);s.save(d)
     w=Window(s);sounds=[];w.buzzer.sound_fn=sounds.append
     w.result(d.id,d,Result(False,error='No reply'));assert not w.buzzer.playing
     w.result(d.id,d,Result(False,error='No reply'));assert w.buzzer.playing
@@ -74,7 +74,7 @@ def test_invalid_map_position():
 
 def test_stale_or_disabled_device_stops_alarm(app,tmp_path):
     import time
-    s=Store(tmp_path/'db');d=Device(name='Radio',host='127.0.0.1',failure_threshold=1);s.save(d)
+    s=Store(tmp_path/'db');s.set_setting('alarm_delay_seconds',0);d=Device(name='Radio',host='127.0.0.1',failure_threshold=1);s.save(d)
     w=Window(s);w.buzzer.sound_fn=lambda x:None
     w.result(d.id,d,Result(False));assert w.buzzer.playing
     w.latest[d.id]['at']=time.time()-200;w.refresh_states()

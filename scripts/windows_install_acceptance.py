@@ -31,7 +31,7 @@ def uninstall(folder):
 
 
 def studio_acceptance(root):
-    setup=root/'release/ZeeAdminStudio-Setup-Windows-v0.4.16.exe'
+    setup=root/'release/ZeeAdminStudio-Setup-Windows-v0.4.17.exe'
     runtime=Path(os.environ['LOCALAPPDATA'])/'Programs/ZeeAdminStudio'
     data=Path(os.environ['LOCALAPPDATA'])/'ZeeAdminStudio'
     data.mkdir(parents=True,exist_ok=True);marker=data/'installer-preserve.txt';marker.write_text('CI fixture')

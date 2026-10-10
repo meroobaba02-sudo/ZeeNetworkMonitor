@@ -90,7 +90,7 @@ def test_unverified_all_network_path_cannot_become_false_online(app,tmp_path):
 
 
 def test_background_network_fault_buzzer_and_mobile_are_not_hidden(app,tmp_path):
-    s=Store(tmp_path/'db');s.set_setting('auto_cleanup',False);s.save_page(NetworkPage(id='other',name='Other',routing_verified=True))
+    s=Store(tmp_path/'db');s.set_setting('alarm_delay_seconds',0);s.set_setting('auto_cleanup',False);s.save_page(NetworkPage(id='other',name='Other',routing_verified=True))
     d=Device(name='Radio',host='127.0.0.1',page_id='other',failure_threshold=1);s.save(d)
     w=Window(s);w.buzzer.sound_fn=lambda *args:None
     class Server:

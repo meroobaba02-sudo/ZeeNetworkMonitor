@@ -1,4 +1,4 @@
-#define MyAppVersion "0.4.16"
+#define MyAppVersion "0.4.17"
 [Setup]
 AppId={{5D36ECA3-A7F2-422A-9D3D-3BC38B5AD19D}
 AppName=Zee Admin Studio
@@ -11,7 +11,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 OutputDir=..\release
-OutputBaseFilename=ZeeAdminStudio-Setup-Windows-v0.4.16
+OutputBaseFilename=ZeeAdminStudio-Setup-Windows-v0.4.17
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

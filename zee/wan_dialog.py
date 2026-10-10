@@ -1,6 +1,7 @@
 """Beginner WAN controls and asynchronous, read-only route inspection."""
 from dataclasses import replace
-import time
+import time,socket
+from urllib.parse import urlsplit
 from PySide6.QtCore import QObject,Signal,QRunnable,QThreadPool
 from PySide6.QtWidgets import QDialog,QVBoxLayout,QFormLayout,QLineEdit,QSpinBox,QDoubleSpinBox,QCheckBox,QLabel,QTextEdit,QPushButton,QDialogButtonBox,QMessageBox,QScrollArea,QWidget
 from .telemetry import validate_profile
@@ -10,8 +11,19 @@ class Signals(QObject):done=Signal(str)
 class RouteTask(QRunnable):
     def __init__(self,target,source,signals):super().__init__();self.target=target;self.source=source;self.signals=signals
     def run(self):
-        try:text=route_report(self.target,self.source)
-        except (ValueError,OSError) as e:text='Cannot select local route: '+str(e)
+        try:
+            host=urlsplit(self.target).hostname
+            if host:
+                family=socket.AF_INET6 if ':' in self.source else socket.AF_INET
+                target=socket.getaddrinfo(host,443,family,socket.SOCK_STREAM)[0][4][0]
+            else:target=self.target
+            text=route_report(target,self.source)
+            from .wan_paths import find_route
+            import re
+            selected=re.search(r'OS-selected local source: ([^\s]+)',text).group(1)
+            route=find_route(target,selected)
+            text='Internet next hop: '+route['gateway']+'\nLocal laptop IP: '+route['source']+'\nInterface index: '+str(route['interface'])+'\n\n'+text
+        except (ValueError,OSError) as e:text='Cannot verify Internet route: '+str(e)
         self.signals.done.emit(text)
 
 class WanDialog(QDialog):
@@ -34,13 +46,24 @@ class WanDialog(QDialog):
         self.counter_interface.textChanged.connect(lambda *_:self.counter_verified.setChecked(False))
         day=time.strftime('%Y-%m-%d');used=w.store.setting('speed-budget:'+d.id+':'+day,0)
         note=QLabel(f'Today: {used/1048576:.2f} MiB reserved for tests. Failed tests retain the reservation. Internet speeds tests verify the Windows next hop on each actual TLS socket. Upload receiver must acknowledge JSON received_bytes. Live traffic requires verified WAN counters. Browser tests use the laptop current connection. Router ping and external HTTPS status are separate. HTTPS latency includes connection/TLS/server time. Rate cap limits reads, not guaranteed wire bandwidth.');note.setWordWrap(True);layout.addWidget(note)
-        self.check=QPushButton('Inspect Windows route / adapters (read-only)');self.check.clicked.connect(self.inspect);layout.addWidget(self.check)
+        preset=QPushButton('Use Cloudflare download-test setup');preset.clicked.connect(self.download_preset);layout.addWidget(preset)
+        hint=QLabel('Gateway = the modem Internet next hop, not necessarily its management/ping IP. Source = an IP assigned to this laptop. Seven modems on one switch need correct Windows routes or separate interfaces; the software cannot select a modem by ping IP alone.');hint.setWordWrap(True);layout.addWidget(hint)
+        self.check=QPushButton('Inspect Internet route / adapters (read-only)');self.check.clicked.connect(self.inspect);layout.addWidget(self.check)
         self.report=QTextEdit();self.report.setReadOnly(True);layout.addWidget(self.report,1)
         self.signals=Signals();self.signals.done.connect(self.finished_report)
         box=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);box.accepted.connect(self.accept);box.rejected.connect(self.reject);layout.addWidget(box)
+    def download_preset(self):
+        self.fields['internet_url'].setText('https://speed.cloudflare.com/cdn-cgi/trace')
+        self.fields['internet_marker'].setText('h=')
+        self.fields['speed_url'].setText('https://speed.cloudflare.com/__down?bytes=1048576')
+        self.fields['speed_mb'].setValue(1)
+        self.fields['rate_cap_kbps'].setValue(0)
+        self.verified.setChecked(False)
+        self.report.setPlainText('Download endpoint configured. Inspect the Internet route, enter the actual next hop, verify this WAN path, then Save. Upload still requires an authorized receiver. No test has started.')
+
     def inspect(self):
         self.check.setEnabled(False);self.report.setPlainText('Inspecting local route...')
-        QThreadPool.globalInstance().start(RouteTask(self.d.host,self.source.text().strip(),self.signals))
+        QThreadPool.globalInstance().start(RouteTask(self.fields['speed_url'].text().strip() or self.fields['internet_url'].text().strip() or 'https://speed.cloudflare.com/__down?bytes=0',self.source.text().strip(),self.signals))
     def finished_report(self,text):self.report.setPlainText(text);self.check.setEnabled(True)
     def value(self):
         p=dict(self.d.integration)

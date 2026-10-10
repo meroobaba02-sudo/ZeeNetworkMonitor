@@ -1,4 +1,4 @@
-ZEE NETWORK MONITOR PROFESSIONAL v0.4.16
+ZEE NETWORK MONITOR PROFESSIONAL v0.4.17
 
 WINDOWS PAR CHALANA
 Successful GitHub Actions run se Setup ya Portable artifact download karen.
@@ -82,7 +82,7 @@ Phase 8.2: nayi v2 licence mein features/device limit enforce hain. Profiles > P
 
 PHASE 9 — INSTALLER, LICENCE RECOVERY AUR PHONE
 Admin panel: ZeeAdminStudio-Setup-Windows artifact download aur Extract All karen.
-Andar ZeeAdminStudio-Setup-Windows-v0.4.16.exe run karen. Desktop shortcut se panel kholen.
+Andar ZeeAdminStudio-Setup-Windows-v0.4.17.exe run karen. Desktop shortcut se panel kholen.
 Customer monitor ka ZeeNetworkMonitor-Setup-Windows installer alag hai.
 Commercial customer installer owner Builds / releases se signed profile ke sath banayega.
 Public preview owner evaluation hai; ye kisi customer ki activated licence nahi.
@@ -114,3 +114,5 @@ Purani evidence new session par archive rehti hai. App crash/restart ki running 
 Phase 10.1 pilot tooling hai. Phase 10.2 mein actual report review, observed bugs ke fixes
 or commercial launch decision hoga. Real hardware evidence ke baghair commercial release approved nahi.
 Details: PHASE10_REAL_NETWORK_PILOT.md.
+
+V0.4.17: Buzzer default 15 seconds delay; Settings se change karen. WAN setup mein Cloudflare download-test setup aur Internet route inspector add hai. Details WAN_ALARM_FIX.md.

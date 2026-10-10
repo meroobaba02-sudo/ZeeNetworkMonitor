@@ -137,7 +137,7 @@ def test_manual_cleanup_works_with_auto_disabled_and_pagination(app,tmp_path):
 
 
 def test_refresh_cache_and_coalesced_results_keep_immediate_alarm(app,tmp_path):
-    s=Store(tmp_path/'db');s.set_setting('auto_cleanup',False);d=Device(name='R',host='127.0.0.1',failure_threshold=1);s.save(d)
+    s=Store(tmp_path/'db');s.set_setting('alarm_delay_seconds',0);s.set_setting('auto_cleanup',False);d=Device(name='R',host='127.0.0.1',failure_threshold=1);s.save(d)
     w=Window(s);w.buzzer.sound_fn=lambda *args:None
     try:
         renders=[];original=w.render_table;w.render_table=lambda:(renders.append(1),original())
