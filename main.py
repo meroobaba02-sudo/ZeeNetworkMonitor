@@ -59,6 +59,7 @@ def main():
             from zee.system_dialogs import LicenseDialog
             LicenseDialog(window).exec()
             if not status(base)['valid']:window.close();return 3
+            window.check_licence() # Apply the newly imported package before showing the dashboard.
         window.show()
         if args.smoke_test:
             from pysnmp.hlapi.v3arch.asyncio import SnmpEngine
