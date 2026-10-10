@@ -9,19 +9,35 @@ class LicenseDialog(QDialog):
         super().__init__(w);self.w=w;self.setWindowTitle('Offline licence / activation');self.resize(620,280)
         layout=QVBoxLayout(self);self.label=QLabel();self.label.setWordWrap(True);layout.addWidget(self.label)
         machine=QLineEdit(fingerprint());machine.setReadOnly(True);layout.addWidget(QLabel('This PC activation fingerprint (not transmitted):'));layout.addWidget(machine)
-        for title,fn in [('Import signed licence',self.activate),('Deactivate on this PC',self.deactivate)]:
+        for title,fn in [('Export this PC activation request',self.request),('Import signed licence',self.activate),('Deactivate on this PC',self.deactivate)]:
             b=QPushButton(title);b.clicked.connect(fn);layout.addWidget(b)
         self.refresh()
     def refresh(self):
         state=status(self.w.store.path.parent)
-        self.label.setText(state.get('edition','')+'\n'+('Expiry: '+str(state.get('expires') or 'Perpetual') if state.get('production') and state['valid'] else 'Owner evaluation remains usable. Before customer distribution, owner must generate the issuer key in Zee License Manager and include only issuer-public.json in the build.'))
+        if not state.get('production'):
+            text='Owner evaluation — customer licence enforcement is not enabled.\nOwner must initialize the signing key locally and provide only issuer-public.json for a customer rebuild.'
+        elif not state['valid']:text='ACTIVATION REQUIRED\n'+state.get('reason','Licence invalid')+'\nMonitoring requires a valid signed licence for this PC.'
+        else:
+            expiry=time.strftime('%Y-%m-%d %H:%M:%S UTC',time.gmtime(state['expires'])) if state.get('expires') is not None else 'Perpetual'
+            text=f"Activated: {state.get('edition','')}\nCustomer: {state.get('customer','')}\nReference: {state.get('reference','')}\nExpiry: {expiry}\nAuthorized PCs: 1"
+        self.label.setText(text)
+    def request(self):
+        path,_=QFileDialog.getSaveFileName(self,'Export activation request','zee-activation-request.json','JSON (*.json)')
+        if not path:return
+        try:
+            # This contains a fingerprint, never device credentials/topology; no automatic transmission.
+            payload={'type':'zee-activation-request','version':1,'product':'ZeeNetworkMonitor','machine':fingerprint()}
+            Path(path).write_text(json.dumps(payload,indent=2),encoding='utf-8')
+            QMessageBox.information(self,'Request saved','Send this file to the software owner yourself. It contains this PC fingerprint; no network credentials or topology.')
+        except OSError:QMessageBox.warning(self,'Cannot export request','Check the selected file path and permissions.')
     def activate(self):
         path,_=QFileDialog.getOpenFileName(self,'Signed licence','','JSON (*.json)')
         if not path:return
         try:
             if not public_key_path().exists():raise ValueError('Owner verification key has not been provisioned in this build. See licensing setup guide.')
+            if Path(path).stat().st_size>65536:raise ValueError('Licence file too large.')
             doc=json.loads(Path(path).read_text());verify(doc,json.loads(public_key_path().read_text())['public_key'])
-            (self.w.store.path.parent/'license.json').write_text(json.dumps(doc));self.refresh();QMessageBox.information(self,'Activated','Licence accepted. Restart the application.')
+            target=self.w.store.path.parent/'license.json';temporary=target.with_suffix('.new');temporary.write_text(json.dumps(doc));temporary.replace(target);self.refresh();QMessageBox.information(self,'Activated','Licence accepted. Restart the application.')
         except Exception:QMessageBox.warning(self,'Activation rejected','Licence invalid, expired, wrong PC, or issuer key not provisioned. Contact the software owner.')
     def deactivate(self):
         if QMessageBox.question(self,'Deactivate','Remove activation from this PC? Offline transfer needs the owner to reissue; deleting this copy cannot revoke copies of the old licence.')==QMessageBox.Yes:
