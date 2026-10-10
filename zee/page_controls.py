@@ -75,7 +75,9 @@ class PageControls:
                     from pathlib import Path
                     if Path(path).stat().st_size>10000000:raise ValueError('File too large.')
                     self.store.import_page(json.loads(Path(path).read_text(encoding='utf-8')))
-            self.engine.invalidate();self.measurements.stop();self.requested.clear();self.start_button.setText('▶ Start monitoring');self.reload()
+            self.engine.invalidate();self.measurements.stop();self.requested.clear()
+            self.measurements.latest.clear();self.measurements.speed_latest.clear();self.telemetry_alerted.clear();self.states.clear();self.latest.clear();self.alerted.clear()
+            self.start_button.setText('▶ Start monitoring');self.reload()
         except (ValueError,OSError,KeyError,TypeError) as e:QMessageBox.warning(self,'Network operation failed',str(e))
     def show_details(self,d):
         dialog=DeviceDetails(self,d);self.details_windows.append(dialog);dialog.show()

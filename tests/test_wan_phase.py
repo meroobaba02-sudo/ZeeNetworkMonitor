@@ -37,5 +37,5 @@ def test_speed_success_does_not_clear_external_failure_and_source_edit_invalidat
         assert 'External endpoint check failed' in w.telemetry_alerted[d.id]
         dialog=WanDialog(w,d);dialog.source.setText('127.0.0.1')
         assert not dialog.value().integration['wan_verified']
-        dialog.close()
+        dialog.accept();assert d.id not in w.measurements.latest and d.id not in w.measurements.speed_latest
     finally:w.close();store.db.close()

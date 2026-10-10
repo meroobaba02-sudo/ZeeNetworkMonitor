@@ -45,6 +45,9 @@ class WanDialog(QDialog):
         if source!=(self.d.source or self.w.current_page().source_ip):p['wan_verified']=False
         d=replace(self.d,integration=p,source=source);d.validate();return d
     def accept(self):
-        try:self.w.store.save(self.value());self.w.reload()
+        try:
+            self.w.store.save(self.value())
+            self.w.measurements.latest.pop(self.d.id,None);self.w.measurements.speed_latest.pop(self.d.id,None);self.w.telemetry_alerted.pop(self.d.id,None)
+            self.w.reload()
         except (ValueError,OSError) as e:QMessageBox.warning(self,'Cannot save WAN',str(e));return
         super().accept()
