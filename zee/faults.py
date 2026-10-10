@@ -3,7 +3,8 @@ import hashlib,json
 from .telemetry import quality
 
 def context(device,page=None):
-    values=[device.host,device.source,device.page_id,device.parent,device.integration,
+    values=[device.host,device.source,device.page_id,device.parent,device.peer_id,device.service_url,
+            device.interval,device.timeout,device.latency_threshold,device.failure_threshold,device.integration,
             getattr(page,'source_ip',''),getattr(page,'gateway_hint',''),getattr(page,'routing_verified',False)]
     return hashlib.sha256(json.dumps(values,sort_keys=True).encode()).hexdigest()[:24]
 
@@ -36,7 +37,7 @@ def evaluate(devices,pings,states,latest,streaks,now,pages=None,minimum_interval
             outcomes[-1]['started']=row.get('failure_since',row['at'])
         else:add('reachability','unknown','Insufficient reachability evidence',['Missing/stale/disabled/probe error or threshold not reached'])
         if ping_fresh and row.get('success') is True:
-            add('ping_performance','active' if states.get(d.id)=='Warning' else 'healthy',
+            add('ping_performance','active' if states.get(d.id)=='Warning' else 'healthy' if states.get(d.id)=='Online' else 'unknown',
                 'Observed latency / packet loss warning' if states.get(d.id)=='Warning' else 'ICMP performance within configured limits',
                 ['Fresh successful ICMP observation; configured warning thresholds applied'],'Medium','Compare latency/loss history and load; do not assume a physical link failure.',at=row['at'])
         else:add('ping_performance','unknown','ICMP performance not observed',['No fresh successful ping'])

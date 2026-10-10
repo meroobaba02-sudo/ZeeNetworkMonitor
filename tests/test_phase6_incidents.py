@@ -68,6 +68,8 @@ def test_latency_warning_recovers_only_after_fresh_successful_normal_check():
     assert next(x for x in outcomes if x['category']=='ping_performance')['status']=='active'
     outcomes,_=evaluate(ds,pings,{'g':'Online'},{},{},200)
     assert next(x for x in outcomes if x['category']=='ping_performance')['status']=='unknown'
+    outcomes,_=evaluate(ds,pings,{'g':'Unknown'},{},{},100)
+    assert next(x for x in outcomes if x['category']=='ping_performance')['status']=='unknown'
     outcomes,_=evaluate(ds,{'g':{'at':201,'success':True}},{'g':'Online'},{},{},201)
     assert next(x for x in outcomes if x['category']=='ping_performance')['status']=='healthy'
 
@@ -90,9 +92,10 @@ def test_incident_lifecycle_restart_gap_acknowledgement_and_recurrence(tmp_path)
     assert len(s.incident_rows())==2 and s.incident_rows()[0]['id']!=id
     s.close()
 
-def test_context_change_and_disabled_check_cannot_heal_old_incident(tmp_path):
+@pytest.mark.parametrize('changes',[{'host':'127.0.0.9'},{'service_url':'https://127.0.0.1/'},{'latency_threshold':5}])
+def test_context_change_and_disabled_check_cannot_heal_old_incident(tmp_path,changes):
     s=Store(tmp_path/'state.db');ds=devices()[:1];outcomes,_=scenario(ds,('g',));s.observe_incidents(outcomes)
-    new=[replace(ds[0],host='127.0.0.9')];healthy,_=scenario(new);s.observe_incidents(healthy)
+    new=[replace(ds[0],**changes)];healthy,_=scenario(new);s.observe_incidents(healthy)
     assert s.incident_rows()[0]['status']=='Unobserved' and s.incident_rows()[0]['resolved'] is None
     disabled,_=scenario([replace(ds[0],enabled=False)]);s.observe_incidents(disabled)
     assert s.incident_rows()[0]['resolved'] is None
