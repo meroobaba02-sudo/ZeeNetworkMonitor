@@ -96,11 +96,9 @@ class PageControls:
             import sqlite3
             from pathlib import Path
             if Path(path).resolve()==self.store.path.resolve():raise ValueError('Select a different backup file.')
-            c=sqlite3.connect('file:'+Path(path).as_posix()+'?mode=ro',uri=True)
-            try:
-                if c.execute('PRAGMA integrity_check').fetchone()[0]!='ok' or c.execute('PRAGMA user_version').fetchone()[0] not in (1,2,3):raise ValueError('Invalid or unsupported backup.')
-                c.execute('SELECT data FROM devices LIMIT 1')
-            finally:c.close()
+            from .recovery import open_backup
+            c=open_backup(path)
+            c.close()
             if QMessageBox.question(self,'Restore and restart','Replace current configuration/history on next launch? A safety backup will be kept. Credentials remain on this Windows account.')!=QMessageBox.Yes:return
             import shutil
             shutil.copyfile(path,self.store.path.parent/'restore.pending.sqlite3');self.close()

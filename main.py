@@ -37,13 +37,8 @@ def main():
             QMessageBox.critical(None,'Application error','An operation failed. See diagnostic.log in the data folder.\n'+str(value))
     sys.excepthook=error_hook
     try:
-        pending=base/'restore.pending.sqlite3'
-        if pending.exists():
-            import sqlite3
-            if (base/'monitor.sqlite3').exists():
-                old=sqlite3.connect(base/'monitor.sqlite3');backup=sqlite3.connect(base/'before-restore.bak')
-                old.backup(backup);backup.close();old.close()
-            source=sqlite3.connect(pending);dest=sqlite3.connect(base/'monitor.sqlite3');source.backup(dest);dest.close();source.close();pending.unlink()
+        from zee.recovery import restore_pending
+        restore_pending(base)
         pix=QPixmap(520,190);pix.fill(QColor('#081c2b'));splash=QSplashScreen(pix)
         from PySide6.QtCore import Qt
         splash.showMessage('Zee Network Monitor\nProfessional Edition\n\nCreated by Zeeshan Rasool',Qt.AlignCenter,QColor('#e1f0fa'));splash.show();app.processEvents()

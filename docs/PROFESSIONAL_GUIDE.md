@@ -1,4 +1,4 @@
-# Zee Network Monitor Professional 0.4.0 — owner evaluation preview
+# Zee Network Monitor Professional 0.4.6 — owner evaluation preview
 
 Created by Zeeshan Rasool
 
@@ -95,3 +95,7 @@ Settings > Licence > Export this PC activation request creates only a product/ve
 
 ## v0.4.5 mobile / CCTV
 Mobile dashboard adds network/tower search, filtered recent device events, controlled-download display separately from upload traffic, camera service status, manual refresh and authenticated logout. Settings > Mobile > Refresh paired phones > Revoke selected phone invalidates only that session. Revoke ALL remains available. Phone sessions expire after 30 days; no native push/APK. Changing listen IP now rejects the old certificate; stop service, reset certificate, then verify/trust the new fingerprint and pair again. Reset revokes all phones. No VPN/relay is installed and no firewall ports are changed. Camera details > Camera setup configures management and service URLs and service polling. Camera ping, service response/authentication-required and actual video playback are separate; video remains untested unless manually opened in an external player. Real Android and camera hardware tests, ONVIF and remote VPN commissioning remain pending.
+
+
+## v0.4.6 stabilization
+Source-bound labels cover IPv4/IPv6 and page-level source selection. Pending database restores are revalidated before replacement; corrupted, unsupported or incomplete device-table backups leave the current database intact. Before-restore.bak preserves the previous database. Keep the complete user-data folder for credential/licence/mobile recovery. Detailed history retention is still 90 days by default; the 48-hour policy belongs to Phase 3. Full Admin Studio begins in Phase 8, with a small testable customer/package increment first. See PHASE2_STABILIZATION.md for scope and regression evidence.

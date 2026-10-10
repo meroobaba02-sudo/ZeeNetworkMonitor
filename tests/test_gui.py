@@ -23,6 +23,20 @@ def pump(app,until,timeout=4):
     assert until()
 
 
+@pytest.mark.parametrize('device_source,page_source', [('127.0.0.1',''), ('::1',''), ('','127.0.0.1')])
+def test_source_label_covers_ipv4_ipv6_and_network_source(app,tmp_path,device_source,page_source):
+    from dataclasses import replace
+    s=Store(tmp_path/'db')
+    page=s.pages()[0]
+    s.save_page(replace(page,source_ip=page_source))
+    s.save(Device(name='Bound device',host='::1' if device_source=='::1' else '127.0.0.1',source=device_source))
+    w=Window(s)
+    try:
+        assert w.table.item(0,9).text()=='Source-bound (verify path)'
+    finally:
+        w.close()
+
+
 def test_workers_no_overlap_main_thread(app):
     import threading
     active=set();overlaps=[];seen=[];lock=threading.Lock()

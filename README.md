@@ -1,9 +1,13 @@
 # Zee Network Monitor
 
-Windows desktop network monitor. Python 3.11 + PySide6, SQLite and bounded background ping workers.
+Windows desktop network monitor for towers, radios, WAN links and camera services. Current stabilization release: **0.4.6**, owner-evaluation preview.
 
-Download the Windows portable package from the successful Actions run. Keep its entire folder together and double-click ZeeNetworkMonitor.exe. No Python is required on the user laptop.
+Download the setup or portable package from a successful [Windows Actions run](https://github.com/meroobaba02-sudo/ZeeNetworkMonitor/actions). No Python is needed on the customer's laptop. Keep the entire portable folder together.
 
-Windows build results must be checked in Actions; Windows 10 laptop compatibility remains untested until user testing. Advanced router telemetry, airOS integrations and remote agents are not implemented.
+Existing features include saved network pages, grouped tower maps, background ping, buzzer controls, history, configurable SNMP/HTTPS telemetry, WAN checks, paired read-only mobile access and an offline licence issuer. Firmware metrics require verified configuration and real-device testing. Only the selected network page is monitored; the app does not create routes.
 
-Roman Urdu guide: README_RomanUrdu.txt. Feature status and test report: docs/.
+The separate ZeeLicenseManager utility issues licences. Full Zee Admin Studio is planned for Phase 8; it is not included yet. Customer licensing enforcement requires an owner public key in the customer build. Never distribute the private signing key.
+
+Windows CI tests packaging on Windows Server 2022. Physical Windows 10, real five-network routing, Rocket M5 readings, Android and old-laptop performance remain unverified.
+
+Start with README_RomanUrdu.txt and docs/PROFESSIONAL_GUIDE.md. Current stabilization details: docs/PHASE2_STABILIZATION.md. Older audit/test documents describe their original versions and are historical evidence.

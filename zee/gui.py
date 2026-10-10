@@ -629,7 +629,7 @@ class Window(PageControls,QMainWindow):
                 continue
             if self.station.currentText() not in ('All locations','',d.location) or self.kind.currentText() not in ('All types',d.kind):
                 continue
-            values=[d.name,d.host or '—',d.kind,d.location,state, f"{last['latency']:.1f} ms" if last.get('latency') is not None else '—',f"{stats['loss']:.1f}%" if stats['loss'] is not None else '—',f"{stats['ok']} / {stats['n']-stats['ok']}",stamp(last.get('at')),'IPv6 source-bound (verify path)' if d.source else ('Reachability only' if d.wan or d.kind==TYPES[0] else 'Local probe')]
+            values=[d.name,d.host or '—',d.kind,d.location,state, f"{last['latency']:.1f} ms" if last.get('latency') is not None else '—',f"{stats['loss']:.1f}%" if stats['loss'] is not None else '—',f"{stats['ok']} / {stats['n']-stats['ok']}",stamp(last.get('at')),'Source-bound (verify path)' if (d.source or self.page_snapshot.source_ip) else ('Reachability only' if d.wan or d.kind==TYPES[0] else 'Local probe')]
             row=self.table.rowCount()
             self.table.insertRow(row)
             for col,value in enumerate(values):
