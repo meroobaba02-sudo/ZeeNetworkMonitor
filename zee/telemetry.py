@@ -2,15 +2,19 @@
 import math,re,time,asyncio,json,base64
 from .connections import request,validate_url,service_check,connection
 METRICS={'signal_dbm','noise_dbm','snr_db','tx_ccq','rx_ccq','tx_mbps','rx_mbps','frequency_mhz','channel_width_mhz','uptime_s','ethernet_up','wireless_up','cpu_pct','memory_pct','in_octets','out_octets','counter_epoch'}
-DEFAULT_PROFILE={'method':'none','poll_seconds':30,'firmware_verified':False,'oids':{},'fields':{},'wan_verified':False,'internet_url':'','internet_marker':'','speed_url':'','speed_mb':1,'speed_seconds':5,'daily_mb':10,'automatic_speed':False,'speed_interval':900,'min_download_mbps':0,'loss_warning_pct':10,'signal_good':-60,'signal_poor':-80,'ccq_good':90,'ccq_poor':50}
+DEFAULT_PROFILE={'method':'none','poll_seconds':30,'firmware_verified':False,'oids':{},'fields':{},'wan_verified':False,'internet_url':'','internet_marker':'','speed_url':'','speed_mb':1,'speed_seconds':5,'daily_mb':10,'automatic_speed':False,'speed_interval':900,'min_download_mbps':0,'loss_warning_pct':10,'signal_good':-60,'signal_poor':-80,'ccq_good':90,'ccq_poor':50,'snmp_version':'2c','rate_quality_enabled':False,'rate_good_mbps':100,'rate_poor_mbps':10}
 
 def validate_profile(p):
     if not isinstance(p,dict):raise ValueError('Integration settings must be an object.')
     if set(p)-set(DEFAULT_PROFILE)-{'url','snmp_port','allow_v2c','rate_cap_kbps'}:raise ValueError('Unknown integration setting; secrets belong in the protected credential fields.')
     if p.get('method','none') not in ('none','snmp','https-json'):raise ValueError('Unsupported adapter.')
+    if p.get('snmp_version','2c') not in ('1','2c'):raise ValueError('SNMP version must be 1 or 2c.')
+    for key in ('rate_quality_enabled','allow_v2c'):
+        if key in p and not isinstance(p[key],bool):raise ValueError(key+' must be true or false.')
+    if p.get('rate_poor_mbps',10)>=p.get('rate_good_mbps',100):raise ValueError('Good rate must be above poor rate.')
     for key in ('url','internet_url','speed_url'):
         if p.get(key):validate_url(p[key],('https',))
-    for key,low,high in [('poll_seconds',5,3600),('speed_mb',1,64),('speed_seconds',1,30),('daily_mb',1,1024),('speed_interval',900,86400),('snmp_port',1,65535),('rate_cap_kbps',0,1000000),('min_download_mbps',0,100000),('loss_warning_pct',0,100),('signal_good',-120,-1),('signal_poor',-130,-2),('ccq_good',1,100),('ccq_poor',0,99)]:
+    for key,low,high in [('poll_seconds',5,3600),('speed_mb',1,64),('speed_seconds',1,30),('daily_mb',1,1024),('speed_interval',900,86400),('snmp_port',1,65535),('rate_cap_kbps',0,1000000),('min_download_mbps',0,100000),('loss_warning_pct',0,100),('signal_good',-120,-1),('signal_poor',-130,-2),('ccq_good',1,100),('ccq_poor',0,99),('rate_good_mbps',0.01,100000),('rate_poor_mbps',0,99999)]:
         if key in p and (not isinstance(p[key],(int,float)) or not math.isfinite(p[key]) or not low<=p[key]<=high):raise ValueError('Invalid '+key)
     if p.get('signal_poor',-80)>=p.get('signal_good',-60) or p.get('ccq_poor',50)>=p.get('ccq_good',90):raise ValueError('Good thresholds must be above poor thresholds.')
     for key in ('oids','fields'):
@@ -35,14 +39,14 @@ def normalized(raw,mapping):
 async def snmp_fetch(d,secrets):
     from pysnmp.hlapi.v3arch.asyncio import SnmpEngine,CommunityData,UdpTransportTarget,ContextData,ObjectType,ObjectIdentity,get_cmd
     p=d.integration
-    if not p.get('allow_v2c'):raise ValueError('SNMPv2c must be explicitly enabled on a trusted management network; its community travels unencrypted.')
+    if not p.get('allow_v2c'):raise ValueError('SNMP v1/v2c must be explicitly enabled on a trusted management network; its community travels unencrypted.')
     if not secrets.get('community'):raise ValueError('Save a read-only SNMP community first.')
     engine=SnmpEngine()
     try:
         target=await UdpTransportTarget.create((d.host,int(p.get('snmp_port',161))),timeout=2,retries=0)
         values=list(p.get('oids',{}).items())
         if not values:raise ValueError('No firmware-verified OIDs configured.')
-        error,status,index,bindings=await get_cmd(engine,CommunityData(secrets['community']),target,ContextData(),*[ObjectType(ObjectIdentity(v['path'])) for k,v in values],lookupMib=False)
+        error,status,index,bindings=await get_cmd(engine,CommunityData(secrets['community'],mpModel=0 if p.get('snmp_version','2c')=='1' else 1),target,ContextData(),*[ObjectType(ObjectIdentity(v['path'])) for k,v in values],lookupMib=False)
         if error or status:raise ValueError('SNMP timeout or rejected request; check firmware, network and read-only community.')
         out={}
         for (name,cfg),binding in zip(values,bindings):
@@ -59,7 +63,7 @@ def fetch_metrics(d,secrets,source=''):
     if not p.get('firmware_verified'):return {},'Firmware/profile not verified'
     if method=='snmp':
         if source:raise ValueError('SNMP source binding is not implemented; use a verified non-overlapping management route or HTTPS adapter.')
-        return asyncio.run(asyncio.wait_for(snmp_fetch(d,secrets),8)), 'SNMP (configured OIDs)'
+        return asyncio.run(asyncio.wait_for(snmp_fetch(d,secrets),8)), 'SNMP v'+p.get('snmp_version','2c')+' (configured OIDs)'
     url=p.get('url','');u=validate_url(url,('https',))
     # Saved device credentials are never sent to a different target host.
     if u.hostname.lower()!=d.host.lower():raise ValueError('Telemetry URL host must match the device management host.')
@@ -75,6 +79,9 @@ def quality(metrics,p,age=0):
     parts=[]
     for key,poor,good in [('signal_dbm',p.get('signal_poor',-80),p.get('signal_good',-60)),('tx_ccq',p.get('ccq_poor',50),p.get('ccq_good',90)),('rx_ccq',p.get('ccq_poor',50),p.get('ccq_good',90))]:
         if key in metrics:parts.append(max(0,min(10,10*(metrics[key]-poor)/(good-poor))))
+    if p.get('rate_quality_enabled'):
+        for key in ('tx_mbps','rx_mbps'):
+            if key in metrics:parts.append(max(0,min(10,10*(metrics[key]-p.get('rate_poor_mbps',10))/(p.get('rate_good_mbps',100)-p.get('rate_poor_mbps',10)))))
     if not parts:return None,'Unknown'
     score=round(min(parts),1)
     return score,'Good' if score>=8 else 'Fair' if score>=5 else 'Poor'

@@ -141,10 +141,12 @@ def test_actual_tower_drag_saves_without_local_replace_error(app,tmp_path):
     canvas.mouseReleaseEvent(SimpleNamespace())
     saved=s.stations()[0];assert saved.latitude is not None and (saved.map_x,saved.map_y)!=(.5,.5);w.close()
 
-def test_actual_snmp_adapter_against_local_protocol_fixture():
+@pytest.mark.parametrize('version',['1','2c'])
+def test_actual_snmp_adapter_against_local_protocol_fixture(version):
     import socket,asyncio
     from pyasn1.codec.ber import decoder,encoder
-    from pysnmp.proto.api import v2c
+    from pysnmp.proto.api import v1,v2c
+    v2c=v1 if version=='1' else v2c
     from zee.telemetry import snmp_fetch
     sock=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);sock.bind(('127.0.0.1',0));sock.settimeout(5)
     errors=[]
@@ -154,7 +156,7 @@ def test_actual_snmp_adapter_against_local_protocol_fixture():
             v2c.apiPDU.set_varbinds(pdu,[('1.3.6.1.2.1.1.3.0',v2c.Integer(-65))]);sock.sendto(encoder.encode(reply),addr)
         except Exception as e:errors.append(e)
     thread=threading.Thread(target=serve);thread.start()
-    d=Device(host='127.0.0.1',integration={'method':'snmp','allow_v2c':True,'snmp_port':sock.getsockname()[1],'oids':{'signal_dbm':{'path':'1.3.6.1.2.1.1.3.0'}}})
+    d=Device(host='127.0.0.1',integration={'method':'snmp','snmp_version':version,'allow_v2c':True,'snmp_port':sock.getsockname()[1],'oids':{'signal_dbm':{'path':'1.3.6.1.2.1.1.3.0'}}})
     try:assert asyncio.run(snmp_fetch(d,{'community':'fixture-only'}))=={'signal_dbm':-65}
     finally:thread.join();sock.close()
     assert not errors

@@ -79,3 +79,7 @@ Not performed: user's Windows 10 hardware/DPI/speakers, real Rocket M5/airOS fir
 
 ## v0.4.1 usability phase
 Dashboard now shows selected-page ping, wireless, WAN Internet and alert counts. Stale telemetry stays unknown. Alerts count affected devices, not separate incident types. Settings > Help / About explains first-run setup. Event filtering includes tower, device, date and search before the display limit. WAN history shows local-calendar-day and application-session measured sample min/mean/max, keeping traffic estimates separate from controlled tests. These are sample statistics, not time-weighted averages or transferred-byte totals. Daily graph displays the latest 1,000 samples.
+
+
+## v0.4.2 wireless preparation
+SNMP v1 and v2c are selectable; existing profiles keep v2c. airOS 8 official guide documents v1. Both communities are unencrypted; explicit trusted-network consent required. Adapter dialog has method/version/poll controls overriding those JSON fields. Firmware-verified numeric OIDs still required; Prism 5AC XC.v8.7.11 and AF-5XHD v1.4.0 are identified from owner screenshots but no live protocol compatibility or metric OIDs are verified. No firmware/configuration changes are sent to radios. Optional rate_quality_enabled adds measured TX/RX rates to quality with configurable rate_good_mbps/rate_poor_mbps; default OFF. Alignment graph can select quality, signal, SNR or CCQ; stale readings suppress feedback. Last-hour best values are sampled records, not physical dish alignment.

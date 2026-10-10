@@ -4,7 +4,7 @@ from dataclasses import asdict,replace
 from pathlib import Path
 from PySide6.QtCore import Qt,QTimer,QUrl,QPointF
 from PySide6.QtGui import QDesktopServices,QPainter,QColor,QPen
-from PySide6.QtWidgets import (QWidget,QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLabel,QLineEdit,QCheckBox,QComboBox,QPushButton,QDialogButtonBox,QMessageBox,QFileDialog,QInputDialog,QTextEdit,QTableWidget,QTableWidgetItem,QApplication,QDoubleSpinBox)
+from PySide6.QtWidgets import (QWidget,QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLabel,QLineEdit,QCheckBox,QComboBox,QPushButton,QDialogButtonBox,QMessageBox,QFileDialog,QInputDialog,QTextEdit,QTableWidget,QTableWidgetItem,QApplication,QDoubleSpinBox,QSpinBox)
 from .workspaces import NetworkPage
 from .connections import management_url,validate_url
 from .telemetry import DEFAULT_PROFILE,quality,validate_profile
@@ -29,17 +29,22 @@ class IntegrationDialog(QDialog):
     def __init__(self,window,d):
         super().__init__(window);self.window=window;self.d=d;self.setWindowTitle('Secure access / telemetry / WAN');self.resize(700,670)
         layout=QVBoxLayout(self);form=QFormLayout();layout.addLayout(form)
+        self.method=QComboBox();self.method.addItems(['none','snmp','https-json']);self.method.setCurrentText(d.integration.get('method','none'));form.addRow('Measurement method',self.method)
+        self.snmp_version=QComboBox();self.snmp_version.addItems(['1','2c']);self.snmp_version.setCurrentText(d.integration.get('snmp_version','2c'));form.addRow('SNMP version (airOS guide: v1)',self.snmp_version)
+        self.poll_seconds=QSpinBox();self.poll_seconds.setRange(5,3600);self.poll_seconds.setValue(d.integration.get('poll_seconds',30));form.addRow('Polling interval (seconds)',self.poll_seconds)
+        self.trusted=QCheckBox('Allow unencrypted SNMP on my trusted management network');self.trusted.setChecked(d.integration.get('allow_v2c',False));form.addRow(self.trusted)
         self.username=QLineEdit(d.username);form.addRow('Username',self.username)
         self.password=QLineEdit();self.password.setEchoMode(QLineEdit.Password);self.password.setPlaceholderText('Blank keeps existing password');form.addRow('Password (Windows protected)',self.password)
         self.community=QLineEdit();self.community.setEchoMode(QLineEdit.Password);self.community.setPlaceholderText('Blank keeps existing read-only community');form.addRow('SNMP community (Windows protected)',self.community)
         self.remove=QCheckBox('Delete all saved credentials for this device');form.addRow(self.remove)
-        text=QLabel('No automatic browser login. SNMPv2c community travels unencrypted: enable only on a trusted management network. HTTPS JSON uses validated TLS and sends credentials only to the configured device host. Never enter secrets in the JSON below.');text.setWordWrap(True);layout.addWidget(text)
+        text=QLabel('No automatic browser login. SNMP v1/v2c community travels unencrypted: enable only on a trusted management network. HTTPS JSON uses validated TLS and sends credentials only to the configured device host. Never enter secrets in the JSON below.');text.setWordWrap(True);layout.addWidget(text)
         self.profile=QTextEdit();self.profile.setPlainText(json.dumps(DEFAULT_PROFILE|d.integration,indent=2));layout.addWidget(self.profile)
-        helptext=QLabel('Adapter method: none / snmp / https-json. oids or fields: {"signal_dbm": {"path": "verified numeric OID or JSON/key", "scale": 1}}. Verify model/firmware before setting firmware_verified. WAN checks need wan_verified, HTTPS internet_url and internet_marker. Speed tests are OFF by default. See PROFESSIONAL_GUIDE.');helptext.setWordWrap(True);layout.addWidget(helptext)
+        helptext=QLabel('Adapter method: none / snmp / https-json. oids or fields: {"signal_dbm": {"path": "verified numeric OID or JSON/key", "scale": 1}}. Verify model/firmware before setting firmware_verified. WAN checks need wan_verified, HTTPS internet_url and internet_marker. Top controls set method, SNMP version and interval. Numeric OIDs still need verification; no model profile is guessed. Speed tests are OFF by default. See PROFESSIONAL_GUIDE.');helptext.setWordWrap(True);layout.addWidget(helptext)
         box=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);box.accepted.connect(self.accept);box.rejected.connect(self.reject);layout.addWidget(box)
     def accept(self):
         try:
-            profile=json.loads(self.profile.toPlainText());validate_profile(profile)
+            profile=json.loads(self.profile.toPlainText())
+            profile.update(method=self.method.currentText(),snmp_version=self.snmp_version.currentText(),poll_seconds=self.poll_seconds.value(),allow_v2c=self.trusted.isChecked());validate_profile(profile)
             d=replace(self.d,username=self.username.text().strip(),integration=profile);d.validate()
             if self.remove.isChecked():self.window.vault.delete(d.id)
             elif self.password.text() or self.community.text():
@@ -76,8 +81,9 @@ def distance_bearing(a,b):
 
 class DeviceDetails(QDialog):
     def __init__(self,w,d):
-        super().__init__(w);self.w=w;self.id=d.id;self.previous=None;self.setWindowTitle('Device details / dish alignment');self.resize(700,660)
+        super().__init__(w);self.w=w;self.id=d.id;self.previous=None;self.previous_at=None;self.setWindowTitle('Device details / dish alignment');self.resize(760,760)
         layout=QVBoxLayout(self);self.text=QLabel();self.text.setWordWrap(True);self.text.setTextFormat(Qt.PlainText);layout.addWidget(self.text)
+        self.trend_metric=QComboBox();self.trend_metric.addItem('Quality (0–10)','quality');self.trend_metric.addItem('Signal (dBm)','signal_dbm');self.trend_metric.addItem('SNR (dB)','snr_db');self.trend_metric.addItem('TX CCQ (%)','tx_ccq');self.trend_metric.addItem('RX CCQ (%)','rx_ccq');self.trend_metric.currentIndexChanged.connect(self.refresh);layout.addWidget(self.trend_metric)
         self.graph=MetricGraph();layout.addWidget(self.graph)
         self.events=QTextEdit();self.events.setReadOnly(True);self.events.setMaximumHeight(120);layout.addWidget(self.events)
         self.feedback=QCheckBox('Alignment sound when measured quality improves (technician adjusts dish)');layout.addWidget(self.feedback)
@@ -111,11 +117,17 @@ class DeviceDetails(QDialog):
         lines+=['Last collection: '+(time.strftime('%H:%M:%S',time.localtime(r['at'])) if r else 'Never')+(' • STALE' if r and age>max(30,d.integration.get('poll_seconds',30)*3) else '')]
         lines+=[f'{k}: {m.get(k,"Unavailable")}' for k in ['signal_dbm','noise_dbm','snr_db','tx_ccq','rx_ccq','tx_mbps','rx_mbps','frequency_mhz','channel_width_mhz','uptime_s','ethernet_up','wireless_up','cpu_pct','memory_pct']]
         if geo:lines.append(f'Distance {geo[0]:.2f} km • initial bearing {geo[1]:.1f}° • elevation guidance unavailable')
-        rows=self.w.store.measurements(d.id,time.time()-86400,1000);scores=[quality(x.get('metrics',{}),d.integration)[0] for x in rows if 'metrics' in x]
+        rows=self.w.store.measurements(d.id,time.time()-3600,1000)
+        metric=self.trend_metric.currentData();scores=[quality(x.get('metrics',{}),d.integration)[0] if metric=='quality' else x.get('metrics',{}).get(metric) for x in rows]
         self.graph.values=scores;self.graph.update();valid=[x for x in scores if x is not None]
-        if valid:lines.append(f'Best recent quality: {max(valid):.1f}/10')
-        if self.feedback.isChecked() and score is not None and self.previous is not None and score>self.previous:QApplication.beep()
-        if score is not None:self.previous=score
+        if valid:lines.append(f'Best last-hour {self.trend_metric.currentText()}: {max(valid):.1f} (latest 1,000 samples)')
+        fresh=age<=max(30,d.integration.get('poll_seconds',30)*3)
+        if score is not None and fresh and r.get('at')!=self.previous_at:
+            if self.previous is not None:
+                delta=round(score-self.previous,1);lines.append('Alignment trend: '+('Improving' if delta>0 else 'Deteriorating' if delta<0 else 'Stable')+f' ({delta:+.1f} quality points)')
+                if self.feedback.isChecked() and delta>0:QApplication.beep()
+            self.previous=score;self.previous_at=r.get('at')
+        elif not fresh:self.previous=None;self.previous_at=None;lines.append('Alignment feedback paused: readings stale or unavailable')
         lines.append(r.get('telemetry_error',r.get('method','No telemetry collected')));self.text.setText('\n'.join(lines))
         self.events.setPlainText('\n'.join(x['message'] for x in self.w.store.events(d.id,limit=5)))
     def closeEvent(self,event):self.timer.stop();event.accept()
