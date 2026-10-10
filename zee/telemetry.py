@@ -1,16 +1,42 @@
 """Read-only explicit adapters. Device OIDs require firmware-specific verification."""
-import math,re,time,asyncio,json,base64
+import math,re,time,asyncio,json,base64,ipaddress
 from .connections import request,validate_url,service_check,connection
 METRICS={'signal_dbm','noise_dbm','snr_db','tx_ccq','rx_ccq','tx_mbps','rx_mbps','frequency_mhz','channel_width_mhz','uptime_s','ethernet_up','wireless_up','cpu_pct','memory_pct','in_octets','out_octets','counter_epoch'}
 DEFAULT_PROFILE={'method':'none','poll_seconds':30,'firmware_verified':False,'oids':{},'fields':{},'wan_verified':False,'internet_url':'','internet_marker':'','speed_url':'','speed_mb':1,'speed_seconds':5,'daily_mb':10,'automatic_speed':False,'speed_interval':900,'min_download_mbps':0,'loss_warning_pct':10,'signal_good':-60,'signal_poor':-80,'ccq_good':90,'ccq_poor':50,'snmp_version':'2c','rate_quality_enabled':False,'rate_good_mbps':100,'rate_poor_mbps':10,'internet_latency_warning_ms':1500,'service_alerts':False}
+DEFAULT_PROFILE.update(device_model='',firmware_version='',wan_interface='',wan_counter_verified=False)
+
+def clean_metrics(metrics):
+    """Reject invalid units/enums without inventing replacements; retain Counter64 precision."""
+    bounds={'signal_dbm':(-130,0),'noise_dbm':(-150,0),'snr_db':(0,150),
+            'tx_ccq':(0,100),'rx_ccq':(0,100),'cpu_pct':(0,100),'memory_pct':(0,100),
+            'tx_mbps':(0,100000),'rx_mbps':(0,100000),'frequency_mhz':(1,100000),
+            'channel_width_mhz':(1,1000),'uptime_s':(0,2**64-1),
+            'in_octets':(0,2**64-1),'out_octets':(0,2**64-1),'counter_epoch':(0,2**64-1)}
+    out={}
+    for name,value in metrics.items():
+        if name not in METRICS or not isinstance(value,(int,float)) or isinstance(value,bool):continue
+        if isinstance(value,float) and not math.isfinite(value):continue
+        if name in ('ethernet_up','wireless_up'):
+            if value in (0,1):out[name]=value
+        elif name in bounds and bounds[name][0]<=value<=bounds[name][1]:out[name]=value
+    return out
+
+def metric_number(value,scale=1):
+    # ASN.1 integers and decimal JSON strings must not pass through float first.
+    text=str(value)
+    number=int(text) if re.fullmatch(r'[+-]?\d+',text) else float(value)
+    return number if scale==1 else number*scale
 
 def validate_profile(p):
     if not isinstance(p,dict):raise ValueError('Integration settings must be an object.')
     if set(p)-set(DEFAULT_PROFILE)-{'url','snmp_port','allow_v2c','rate_cap_kbps'}:raise ValueError('Unknown integration setting; secrets belong in the protected credential fields.')
     if p.get('method','none') not in ('none','snmp','https-json'):raise ValueError('Unsupported adapter.')
     if p.get('snmp_version','2c') not in ('1','2c'):raise ValueError('SNMP version must be 1 or 2c.')
-    for key in ('rate_quality_enabled','allow_v2c','service_alerts'):
+    for key in ('rate_quality_enabled','allow_v2c','service_alerts','firmware_verified','wan_verified','wan_counter_verified','automatic_speed'):
         if key in p and not isinstance(p[key],bool):raise ValueError(key+' must be true or false.')
+    for key in ('device_model','firmware_version','wan_interface'):
+        if key in p and (not isinstance(p[key],str) or len(p[key])>120 or any(ord(c)<32 for c in p[key])):raise ValueError('Invalid '+key)
+    if p.get('wan_counter_verified') and not p.get('wan_interface','').strip():raise ValueError('Name the verified WAN counter interface first.')
     if p.get('rate_poor_mbps',10)>=p.get('rate_good_mbps',100):raise ValueError('Good rate must be above poor rate.')
     for key in ('url','internet_url','speed_url'):
         if p.get(key):validate_url(p[key],('https',))
@@ -30,20 +56,27 @@ def normalized(raw,mapping):
     for name,cfg in mapping.items():
         value=raw
         try:
-            for part in cfg['path'].split('/'):value=value[part]
-            number=float(value)*cfg.get('scale',1)
-            if math.isfinite(number):result[name]=number
-        except (ValueError,TypeError,KeyError):continue
-    return result
+            for part in cfg['path'].split('/'):value=value[int(part)] if isinstance(value,list) else value[part]
+            number=metric_number(value,cfg.get('scale',1))
+            if isinstance(number,int) or math.isfinite(number):result[name]=number
+        except (ValueError,TypeError,KeyError,IndexError,OverflowError):continue
+    return clean_metrics(result)
 
-async def snmp_fetch(d,secrets):
-    from pysnmp.hlapi.v3arch.asyncio import SnmpEngine,CommunityData,UdpTransportTarget,ContextData,ObjectType,ObjectIdentity,get_cmd
+async def snmp_fetch(d,secrets,source=''):
+    from pysnmp.hlapi.v3arch.asyncio import SnmpEngine,CommunityData,UdpTransportTarget,Udp6TransportTarget,ContextData,ObjectType,ObjectIdentity,get_cmd
     p=d.integration
     if not p.get('allow_v2c'):raise ValueError('SNMP v1/v2c must be explicitly enabled on a trusted management network; its community travels unencrypted.')
     if not secrets.get('community'):raise ValueError('Save a read-only SNMP community first.')
     engine=SnmpEngine()
     try:
-        target=await UdpTransportTarget.create((d.host,int(p.get('snmp_port',161))),timeout=2,retries=0)
+        try:remote=ipaddress.ip_address(d.host)
+        except ValueError:remote=None
+        local=ipaddress.ip_address(source) if source else None
+        if local and (remote is None or local.version!=remote.version or local.is_unspecified or local.is_multicast):raise ValueError('Source-bound SNMP requires literal matching-family device and local IPs.')
+        if '%' in d.host or '%' in source:raise ValueError('Scoped IPv6 SNMP is not verified; use a non-scoped management address.')
+        cls=Udp6TransportTarget if remote and remote.version==6 else UdpTransportTarget
+        target=await cls.create((d.host,int(p.get('snmp_port',161))),timeout=2,retries=0)
+        if source:target.set_local_address((source,0))
         values=list(p.get('oids',{}).items())
         if not values:raise ValueError('No firmware-verified OIDs configured.')
         error,status,index,bindings=await get_cmd(engine,CommunityData(secrets['community'],mpModel=0 if p.get('snmp_version','2c')=='1' else 1),target,ContextData(),*[ObjectType(ObjectIdentity(v['path'])) for k,v in values],lookupMib=False)
@@ -51,10 +84,10 @@ async def snmp_fetch(d,secrets):
         out={}
         for (name,cfg),binding in zip(values,bindings):
             try:
-                value=float(binding[1])*cfg.get('scale',1)
-                if math.isfinite(value):out[name]=value
-            except (TypeError,ValueError):pass
-        return out
+                value=metric_number(binding[1],cfg.get('scale',1))
+                if isinstance(value,int) or math.isfinite(value):out[name]=value
+            except (TypeError,ValueError,OverflowError):pass
+        return clean_metrics(out)
     finally:engine.close_dispatcher()
 
 def fetch_metrics(d,secrets,source=''):
@@ -62,8 +95,7 @@ def fetch_metrics(d,secrets,source=''):
     if method=='none':return {},'Telemetry unavailable — configure a verified adapter'
     if not p.get('firmware_verified'):return {},'Firmware/profile not verified'
     if method=='snmp':
-        if source:raise ValueError('SNMP source binding is not implemented; use a verified non-overlapping management route or HTTPS adapter.')
-        return asyncio.run(asyncio.wait_for(snmp_fetch(d,secrets),8)), 'SNMP v'+p.get('snmp_version','2c')+' (configured OIDs)'
+        return asyncio.run(asyncio.wait_for(snmp_fetch(d,secrets,source),8)), 'SNMP v'+p.get('snmp_version','2c')+' (configured OIDs; '+('source-bound' if source else 'OS route')+')'
     url=p.get('url','');u=validate_url(url,('https',))
     # Saved device credentials are never sent to a different target host.
     if u.hostname.lower()!=d.host.lower():raise ValueError('Telemetry URL host must match the device management host.')
@@ -74,6 +106,7 @@ def fetch_metrics(d,secrets,source=''):
     return normalized(json.loads(body),p.get('fields',{})),'HTTPS JSON (configured fields)'
 
 def quality(metrics,p,age=0):
+    metrics=clean_metrics(metrics)
     if age>max(30,p.get('poll_seconds',30)*3):return None,'Unknown'
     if metrics.get('wireless_up')==0:return 0,'Critical'
     parts=[]
@@ -88,7 +121,9 @@ def quality(metrics,p,age=0):
 
 def counter_rates(previous,current,elapsed):
     # Counter discontinuity/reboot/wrap resets baseline. Never fabricate a negative rate.
-    if elapsed<=0 or not previous or previous.get('counter_epoch')!=current.get('counter_epoch'):return {}
+    if not math.isfinite(elapsed) or elapsed<=0 or not previous or previous.get('counter_epoch')!=current.get('counter_epoch'):return {}
+    previous=clean_metrics(previous);current=clean_metrics(current)
+    if 'uptime_s' in previous and 'uptime_s' in current and current['uptime_s']<previous['uptime_s']:return {}
     out={}
     for key,name in [('in_octets','download_mbps'),('out_octets','upload_mbps')]:
         if key in previous and key in current and current[key]>=previous[key]:out[name]=(current[key]-previous[key])*8/elapsed/1e6
@@ -113,6 +148,7 @@ def speed_test(p,source='',cancel=None):
             total+=len(data)
             if cap:time.sleep(min(.25,max(0,total/cap-(time.monotonic()-start))))
         elapsed=time.monotonic()-start
+        if cancel and cancel.is_set():raise ValueError('Download measurement cancelled; no completed throughput result.')
         if not total:raise ValueError('Speed endpoint returned no data.')
         return {'download_mbps':total*8/max(.001,elapsed)/1e6,'bytes':total,'seconds':elapsed,'rate_kind':'Controlled download throughput'+(' (rate capped)' if cap else ''),'upload_note':'Upload test unavailable; router counters can measure upload traffic'}
     finally:c.close()

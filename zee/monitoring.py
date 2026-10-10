@@ -26,6 +26,10 @@ class Task(QRunnable):
                         if result['internet']=='Online':result['internet_latency_ms']=(time.monotonic()-started)*1000
                     except Exception:result['internet']='Unknown — TLS, route or external endpoint error'
         except Exception:result['error']='Measurement unavailable — check route, endpoint, credentials and limits'
+        result['at']=time.time();result['monotonic_at']=time.monotonic()
+        result['source_ip']=self.source or 'Automatic (OS route)'
+        result['profile_model']=d.integration.get('device_model','Not recorded')
+        result['profile_firmware']=d.integration.get('firmware_version','Not recorded')
         self.secrets.clear();self.signals.done.emit((d,self.speed,self.generation),result)
 
 class Measurements(QObject):
@@ -64,9 +68,10 @@ class Measurements(QObject):
         if speed:self.speed_latest[d.id]=result
         else:
             old=self.latest.get(d.id,{})
-            if d.integration.get('wan_verified'):
-                rates=telemetry.counter_rates(old.get('metrics'),result['metrics'],result['at']-old.get('at',result['at']))
-                if rates:result.update(rates,rate_kind='WAN interface traffic rate estimate; not available capacity')
+            if d.integration.get('wan_verified') and d.integration.get('wan_counter_verified'):
+                elapsed=result.get('monotonic_at',0)-old.get('monotonic_at',0)
+                rates=telemetry.counter_rates(old.get('metrics'),result['metrics'],elapsed) if old.get('monotonic_at') and 0<elapsed<=max(30,d.integration.get('poll_seconds',30)*3) else {}
+                if rates:result.update(rates,rate_kind='Verified '+d.integration.get('wan_interface','')+' interface traffic; not Internet capacity')
             self.latest[d.id]=result
         failed=bool(result.get('error') or result.get('telemetry_error'))
         self.failures[key]=min(5,self.failures.get(key,0)+1) if failed else 0

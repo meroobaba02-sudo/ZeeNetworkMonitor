@@ -99,7 +99,7 @@ class DeviceDialog(QDialog):
             spin=QDoubleSpinBox();spin.setRange(0,100);spin.setDecimals(1)
             spin.setValue((values[key] if values[key] is not None else .5)*100)
             self.fields[key]=spin;form.addRow(title,spin)
-        help_text = QLabel('WAN without source binding: host reachability only. IPv4 WAN independence needs verified Windows routing; this app does not create routes.\nProfile reference is reserved; no credential collection or radio telemetry in this release.')
+        help_text = QLabel('WAN independence needs a verified Windows path; this app does not create routes. Configure real read-only telemetry in Secure settings. Host/source edits clear relevant verification; missing readings stay unavailable.')
         help_text.setWordWrap(True)
         form.addRow(help_text)
         scroll.setWidget(body)
@@ -125,6 +125,9 @@ class DeviceDialog(QDialog):
             else:
                 values[key] = w.currentData()
         d = Device(**values)
+        if d.host!=self.original.host or d.source!=self.original.source:
+            d.integration=d.integration|{'wan_verified':False,'wan_counter_verified':False}
+        if d.host!=self.original.host:d.integration=d.integration|{'firmware_verified':False}
         d.validate()
         return d
 
@@ -790,6 +793,9 @@ class Window(PageControls,QMainWindow):
         if dialog.exec()==QDialog.Accepted:
             try:
                 value=dialog.device()
+                if d and (value.host!=d.host or value.source!=d.source):
+                    self._resume_minimized=False;self.engine.invalidate();self.measurements.stop();self.requested.clear()
+                    self.measurements.latest.pop(value.id,None);self.measurements.speed_latest.pop(value.id,None);self.telemetry_alerted.pop(value.id,None)
                 self.store.save(value)
                 self.states.pop(value.id,None)
                 self.streaks.pop(value.id,None)

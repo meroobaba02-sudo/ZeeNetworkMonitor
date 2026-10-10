@@ -1,6 +1,6 @@
 # Zee Network Monitor
 
-Windows desktop network monitor for towers, radios, WAN links and camera services. Current multi-network release: **0.4.8**, owner-evaluation preview.
+Windows desktop network monitor for towers, radios, WAN links and camera services. Current device/WAN release: **0.4.9**, owner-evaluation preview.
 
 Download the setup or portable package from a successful [Windows Actions run](https://github.com/meroobaba02-sudo/ZeeNetworkMonitor/actions). No Python is needed on the customer's laptop. Keep the entire portable folder together.
 
@@ -15,3 +15,5 @@ Start with README_RomanUrdu.txt and docs/PROFESSIONAL_GUIDE.md. Current stabiliz
 Phase 3 adds bounded configurable checks, coalesced refresh, device pagination, process CPU/RAM display, background 48-hour detail cleanup, protected/pinned alerts and archive controls. See docs/PHASE3_PERFORMANCE.md for policy and synthetic measurements.
 
 Phase 4: Network setup / paths reads real Windows source addresses, checks reachability asynchronously, and keeps page-specific snapshots/history isolated. Connect tower radios creates explicit peer/upstream links with cycle/page guards. See docs/PHASE4_NETWORKS.md.
+
+Phase 5: real source-bound SNMP GET, model/firmware records and explicit profile attestation, validated wireless metrics, precise Counter64/reboot guards, verified WAN counter-interface selection and changed-endpoint invalidation. Hardware compatibility is blocked until actual device evidence is available. See docs/PHASE5_INTELLIGENCE.md.

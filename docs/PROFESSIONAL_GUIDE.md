@@ -1,4 +1,4 @@
-# Zee Network Monitor Professional 0.4.8 — owner evaluation preview
+# Zee Network Monitor Professional 0.4.9 — owner evaluation preview
 
 Created by Zeeshan Rasool
 
@@ -19,13 +19,13 @@ Setup EXE double-click karen. Desktop aur Start Menu shortcut banenge. Admin/Pyt
 
 Add/edit/rename/reorder/duplicate/archive/restore/delete/export/import pages are implemented. Radio/tower/parent/peer references are scoped to their page. Deleting a page deletes its inventory and saved credentials after confirmation, while measurement history is retained in the database. Unarchive through Manage networks. Do not delete your last active page.
 
-A page is not a network isolation boundary. Source IP binds Windows IPv4 ICMP via IcmpSendEcho2Ex, IPv6 system ping, and HTTP/TCP sockets. It must be an address assigned to the laptop. Literal matching-family targets are required for source-bound ICMP. Adapter name/gateway are notes: Windows routes are not modified. When adapter/gateway is entered but not verified, new probes are blocked. Overlapping subnets require a correctly configured route/VPN or separate agents (agents not included). SNMP source binding is not supported and is explicitly blocked if a source IP is selected. Do not merge separate production networks on an unmanaged switch merely to monitor them.
+A page is not a network isolation boundary. Source IP binds Windows IPv4 ICMP via IcmpSendEcho2Ex, IPv6 system ping, and HTTP/TCP sockets. It must be an address assigned to the laptop. Literal matching-family targets are required for source-bound ICMP. Adapter name/gateway are notes: Windows routes are not modified. When adapter/gateway is entered but not verified, new probes are blocked. Overlapping subnets require a correctly configured route/VPN or separate agents (agents not included). SNMP v1/v2c GET supports literal matching-family IPv4 and non-scoped IPv6 source binding. Invalid bindings fail without automatic-route fallback. Scoped IPv6 SNMP remains blocked. Do not merge separate production networks on an unmanaged switch merely to monitor them.
 
 Default selected-page mode leaves other mobile pages Not monitored. Optional Monitor all networks polls active pages together using shared bounded pools; mobile shows their actual fresh results. Each page requires operator path verification in this mode. Schedules remain per device. Existing ping and buzzer controls are preserved. Ping no-reply does not prove a physical fault.
 
 ## Wireless adapters and alignment
 
-Supported integration methods: none, snmp (read-only SNMPv2c GET), https-json (read-only GET). Both require firmware_verified=true. There is NO bundled claim of an airOS-specific firmware profile or automatic discovery/login. Obtain and verify the actual device firmware's documented OIDs/API first. Unsupported fields remain unavailable. No SSH commands, reboot, router configuration or SNMP SET.
+Supported integration methods: none, snmp (read-only SNMPv2c GET), https-json (read-only GET). Both require firmware_verified=true through the explicit profile-verification checkbox. There is NO bundled claim of an airOS-specific firmware profile or automatic discovery/login. Obtain and verify the actual device firmware's documented OIDs/API first. Unsupported fields remain unavailable. No SSH commands, reboot, router configuration or SNMP SET.
 
 SNMP: store community in the masked protected field; set allow_v2c=true only for a trusted management network (v2c transmits community unencrypted). Numeric OIDs in oids: metric → {"path":"numeric OID","scale":1}. Use the device's read-only community. SNMPv3 is not implemented.
 
@@ -107,3 +107,8 @@ Settings now offers detailed retention in hours (48 on a fresh install), automat
 
 ## v0.4.8 multi-network setup
 Network setup / paths provides named network rows, real Windows IP/adapter inventory, source selection, optional gateway reference, literal test targets, operator attestation and asynchronous reachability/route inspection. Save stops monitoring and invalidates old route snapshots and WAN attestations when paths change. Check results never automatically tick Operator verified. Same target across pages is blocked in all-network mode until sources are disjoint and paths operator-verified; distinct sources alone still do not prove WAN independence. Source snapshots are prepared on the GUI thread before worker submission. All-network mode preserves results across view changes; single-page mode retains previous stop/isolation behavior. Towers, history and peer links remain page-scoped. Connect tower radios creates reciprocal peers, optional upstream parent, and rejects cycles or cross-page links. SNMP source binding is still unsupported; use verified non-overlapping management routing or supported HTTPS adapters. No IPs, routes, VLANs, VPNs or firewall changes are applied. Details: PHASE4_NETWORKS.md.
+
+## v0.4.9 device / WAN intelligence
+SNMP v1/v2c read-only GET now binds the selected literal IPv4/non-scoped IPv6 local source via PySNMP set_local_address. Real loopback protocol tests inspect the received packet source; this supersedes the historical v0.4.8 limitation above. DNS targets with explicit sources, mismatched families and scoped IPv6 fail instead of falling back. No SNMP SET, route changes or automatic firmware profile.
+Secure settings records model/firmware and provides a profile verification checkbox. Editing mapping/model/firmware/method/version clears it; the operator must validate and tick again. Invalid numeric radio values and unsupported link-state enums remain unavailable. Counter64 integer precision is preserved. WAN interface traffic requires a separate interface name and counter attestation; rate baselines reject resets, reboot evidence and stale gaps, with monotonic collection timing. Changed WAN endpoints/marker/source clear WAN attestation. Saving integration/WAN settings stops monitoring, invalidates old workers and clears old measurements; press Start again.
+Details, score formula, evidence, blocked actual-device checks and rollback: PHASE5_INTELLIGENCE.md.

@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass, field
 from .workspaces import WorkspaceStore,NetworkPage
 from pathlib import Path
 
-VERSION = '0.4.8'
+VERSION = '0.4.9'
 TYPES = ['WAN / Internet', 'Rocket M5 / wireless radio', 'Router', 'Switch', 'CCTV / NVR / camera', 'Server / monitoring agent', 'Other']
 
 

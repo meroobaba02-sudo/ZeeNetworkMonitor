@@ -1,4 +1,4 @@
-ZEE NETWORK MONITOR PROFESSIONAL v0.4.8
+ZEE NETWORK MONITOR PROFESSIONAL v0.4.9
 
 WINDOWS PAR CHALANA
 Successful GitHub Actions run se Setup ya Portable artifact download karen.
@@ -54,3 +54,12 @@ public key ke sath customer build chahiye. Preview mein issuer provisioned nahi.
 Windows Server 2022 CI evidence physical Windows 10 laptop ka proof nahi.
 Real Rocket M5, five-network routing, Android aur old-laptop testing baqi hai.
 Details: docs/PROFESSIONAL_GUIDE.md aur docs/PHASE2_STABILIZATION.md.
+
+PHASE 5 — RADIO / WAN
+Secure settings mein asal model aur firmware record karen. Verified OID/JSON mapping
+ke baad profile-verification checkbox tick karen; mapping badalne par dobara check chahiye.
+SNMP GET ab selected source IP se chalti hai (IPv4 aur non-scoped IPv6).
+WAN setup mein counter interface ka asal naam den aur counters verify karen.
+Interface traffic aur Internet speed alag hain. Upload capacity test abhi unavailable hai.
+Rocket M5 ki asal firmware readings abhi device par test honi hain.
+Details: PHASE5_INTELLIGENCE.md.

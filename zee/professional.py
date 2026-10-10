@@ -33,18 +33,28 @@ class IntegrationDialog(QDialog):
         self.snmp_version=QComboBox();self.snmp_version.addItems(['1','2c']);self.snmp_version.setCurrentText(d.integration.get('snmp_version','2c'));form.addRow('SNMP version (airOS guide: v1)',self.snmp_version)
         self.poll_seconds=QSpinBox();self.poll_seconds.setRange(5,3600);self.poll_seconds.setValue(d.integration.get('poll_seconds',30));form.addRow('Polling interval (seconds)',self.poll_seconds)
         self.trusted=QCheckBox('Allow unencrypted SNMP on my trusted management network');self.trusted.setChecked(d.integration.get('allow_v2c',False));form.addRow(self.trusted)
+        self.model=QLineEdit(d.integration.get('device_model',''));form.addRow('Actual device model (optional record)',self.model)
+        self.firmware=QLineEdit(d.integration.get('firmware_version',''));form.addRow('Actual firmware version (optional record)',self.firmware)
         self.username=QLineEdit(d.username);form.addRow('Username',self.username)
         self.password=QLineEdit();self.password.setEchoMode(QLineEdit.Password);self.password.setPlaceholderText('Blank keeps existing password');form.addRow('Password (Windows protected)',self.password)
         self.community=QLineEdit();self.community.setEchoMode(QLineEdit.Password);self.community.setPlaceholderText('Blank keeps existing read-only community');form.addRow('SNMP community (Windows protected)',self.community)
         self.remove=QCheckBox('Delete all saved credentials for this device');form.addRow(self.remove)
         text=QLabel('No automatic browser login. SNMP v1/v2c community travels unencrypted: enable only on a trusted management network. HTTPS JSON uses validated TLS and sends credentials only to the configured device host. Never enter secrets in the JSON below.');text.setWordWrap(True);layout.addWidget(text)
         self.profile=QTextEdit();self.profile.setPlainText(json.dumps(DEFAULT_PROFILE|d.integration,indent=2));layout.addWidget(self.profile)
+        self.profile_verified=QCheckBox('I checked this metric mapping against the actual model / firmware');self.profile_verified.setChecked(d.integration.get('firmware_verified',False));layout.addWidget(self.profile_verified)
+        self.profile.textChanged.connect(lambda:self.profile_verified.setChecked(False))
+        for edit in (self.model,self.firmware):edit.textChanged.connect(lambda *_:self.profile_verified.setChecked(False))
+        for combo in (self.method,self.snmp_version):combo.currentTextChanged.connect(lambda *_:self.profile_verified.setChecked(False))
         helptext=QLabel('Adapter method: none / snmp / https-json. oids or fields: {"signal_dbm": {"path": "verified numeric OID or JSON/key", "scale": 1}}. Verify model/firmware before setting firmware_verified. WAN checks need wan_verified, HTTPS internet_url and internet_marker. Top controls set method, SNMP version and interval. Numeric OIDs still need verification; no model profile is guessed. Speed tests are OFF by default. See PROFESSIONAL_GUIDE.');helptext.setWordWrap(True);layout.addWidget(helptext)
         box=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);box.accepted.connect(self.accept);box.rejected.connect(self.reject);layout.addWidget(box)
     def accept(self):
         try:
             profile=json.loads(self.profile.toPlainText())
-            profile.update(method=self.method.currentText(),snmp_version=self.snmp_version.currentText(),poll_seconds=self.poll_seconds.value(),allow_v2c=self.trusted.isChecked());validate_profile(profile)
+            profile.update(method=self.method.currentText(),snmp_version=self.snmp_version.currentText(),poll_seconds=self.poll_seconds.value(),allow_v2c=self.trusted.isChecked(),device_model=self.model.text().strip(),firmware_version=self.firmware.text().strip(),firmware_verified=self.profile_verified.isChecked())
+            if any(profile.get(k,'')!=self.d.integration.get(k,'') for k in ('internet_url','internet_marker','speed_url')):profile['wan_verified']=False
+            if profile.get('wan_interface','')!=self.d.integration.get('wan_interface',''):profile['wan_counter_verified']=False
+            if any(profile.get(k)!=self.d.integration.get(k,DEFAULT_PROFILE.get(k)) for k in ('method','snmp_version','snmp_port','url','oids','fields','device_model','firmware_version')):profile['wan_counter_verified']=False
+            validate_profile(profile)
             d=replace(self.d,username=self.username.text().strip(),integration=profile);d.validate()
             if self.remove.isChecked():self.window.vault.delete(d.id)
             elif self.password.text() or self.community.text():
@@ -52,6 +62,8 @@ class IntegrationDialog(QDialog):
                 if self.password.text():secrets['password']=self.password.text()
                 if self.community.text():secrets['community']=self.community.text()
                 self.window.vault.set(d.id,secrets)
+            self.window._resume_minimized=False;self.window.engine.invalidate();self.window.engine.stop();self.window.measurements.stop();self.window.requested.clear()
+            self.window.measurements.latest.pop(d.id,None);self.window.measurements.speed_latest.pop(d.id,None);self.window.telemetry_alerted.pop(d.id,None)
             self.window.store.save(d);self.window.reload()
         except (ValueError,RuntimeError,OSError) as e:QMessageBox.warning(self,'Could not save',str(e));return
         super().accept()
@@ -119,6 +131,10 @@ class DeviceDetails(QDialog):
         peer=next((a for a in self.w.devices if a.id==d.peer_id or a.id==d.parent),None)
         a=next((s for s in self.w.store.stations() if s.id==d.station_id),None);b=next((s for s in self.w.store.stations() if peer and s.id==peer.station_id),None);geo=distance_bearing(a,b)
         lines=[d.name+' • '+d.host,'Ping: '+self.w.state(d),'Wireless quality: '+label+(f' ({score}/10)' if score is not None else ''),'Peer: '+(peer.name if peer else 'Not assigned'),'Service: '+r.get('service','Not configured'),'Internet: '+r.get('internet','Not configured')]
+        lines+=['Recorded model / firmware: '+(d.integration.get('device_model') or 'Not recorded')+' / '+(d.integration.get('firmware_version') or 'Not recorded'),
+                'Profile: '+('Operator verified; physical compatibility still needs a device test' if d.integration.get('firmware_verified') else 'Blocked — verify actual firmware mapping'),
+                'Measurement source: '+r.get('source_ip','Not recorded'),
+                'Quality uses the worst available signal/CCQ (and optional rate), scaled 0–10. Missing metrics are not guessed.']
         if d.kind.startswith('CCTV'):
             from .cctv import camera_health
             lines.append('Camera service health: '+camera_health(d,r,time.time()))
@@ -135,7 +151,7 @@ class DeviceDetails(QDialog):
                 delta=round(score-self.previous,1);lines.append('Alignment trend: '+('Improving' if delta>0 else 'Deteriorating' if delta<0 else 'Stable')+f' ({delta:+.1f} quality points)')
                 if self.feedback.isChecked() and delta>0:QApplication.beep()
             self.previous=score;self.previous_at=r.get('at')
-        elif not fresh:self.previous=None;self.previous_at=None;lines.append('Alignment feedback paused: readings stale or unavailable')
+        elif not fresh or score is None:self.previous=None;self.previous_at=None;lines.append('Alignment feedback paused: readings stale or unavailable')
         lines.append(r.get('telemetry_error',r.get('method','No telemetry collected')));self.text.setText('\n'.join(lines))
         self.events.setPlainText('\n'.join(x['message'] for x in self.w.store.events(d.id,limit=5)))
     def closeEvent(self,event):self.timer.stop();event.accept()
