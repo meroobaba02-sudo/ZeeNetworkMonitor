@@ -4,7 +4,8 @@ from dataclasses import asdict,replace
 from pathlib import Path
 from PySide6.QtCore import Qt,QTimer,QUrl,QPointF
 from PySide6.QtGui import QDesktopServices,QPainter,QColor,QPen
-from PySide6.QtWidgets import (QWidget,QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLabel,QLineEdit,QCheckBox,QComboBox,QPushButton,QDialogButtonBox,QMessageBox,QFileDialog,QInputDialog,QTextEdit,QTableWidget,QTableWidgetItem,QApplication,QDoubleSpinBox,QSpinBox)
+from PySide6.QtWidgets import (QWidget,QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLabel,QLineEdit,QCheckBox,QComboBox,QPushButton,QDialogButtonBox,QMessageBox,QFileDialog,QInputDialog,QTextEdit,QTableWidget,QTableWidgetItem,QApplication,QDoubleSpinBox,QSpinBox,QScrollArea)
+from .customer_theme import status_color
 from .workspaces import NetworkPage
 from .connections import management_url,validate_url
 from .telemetry import DEFAULT_PROFILE,quality,validate_profile
@@ -28,7 +29,7 @@ class PageDialog(QDialog):
 class IntegrationDialog(QDialog):
     def __init__(self,window,d):
         super().__init__(window);self.window=window;self.d=d;self.setWindowTitle('Secure access / telemetry / WAN');self.resize(700,670)
-        layout=QVBoxLayout(self);form=QFormLayout();layout.addLayout(form)
+        outer=QVBoxLayout(self);scroll=QScrollArea();scroll.setWidgetResizable(True);body=QWidget();scroll.setWidget(body);outer.addWidget(scroll,1);layout=QVBoxLayout(body);form=QFormLayout();layout.addLayout(form)
         self.method=QComboBox();self.method.addItems(['none','snmp','https-json']);self.method.setCurrentText(d.integration.get('method','none'));form.addRow('Measurement method',self.method)
         self.snmp_version=QComboBox();self.snmp_version.addItems(['1','2c']);self.snmp_version.setCurrentText(d.integration.get('snmp_version','2c'));form.addRow('SNMP version (airOS guide: v1)',self.snmp_version)
         self.poll_seconds=QSpinBox();self.poll_seconds.setRange(5,3600);self.poll_seconds.setValue(d.integration.get('poll_seconds',30));form.addRow('Polling interval (seconds)',self.poll_seconds)
@@ -46,12 +47,12 @@ class IntegrationDialog(QDialog):
         for edit in (self.model,self.firmware):edit.textChanged.connect(lambda *_:self.profile_verified.setChecked(False))
         for combo in (self.method,self.snmp_version):combo.currentTextChanged.connect(lambda *_:self.profile_verified.setChecked(False))
         helptext=QLabel('Adapter method: none / snmp / https-json. oids or fields: {"signal_dbm": {"path": "verified numeric OID or JSON/key", "scale": 1}}. Verify model/firmware before setting firmware_verified. WAN checks need wan_verified, HTTPS internet_url and internet_marker. Top controls set method, SNMP version and interval. Numeric OIDs still need verification; no model profile is guessed. Speed tests are OFF by default. See PROFESSIONAL_GUIDE.');helptext.setWordWrap(True);layout.addWidget(helptext)
-        box=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);box.accepted.connect(self.accept);box.rejected.connect(self.reject);layout.addWidget(box)
+        box=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);box.accepted.connect(self.accept);box.rejected.connect(self.reject);outer.addWidget(box)
     def accept(self):
         try:
             profile=json.loads(self.profile.toPlainText())
             profile.update(method=self.method.currentText(),snmp_version=self.snmp_version.currentText(),poll_seconds=self.poll_seconds.value(),allow_v2c=self.trusted.isChecked(),device_model=self.model.text().strip(),firmware_version=self.firmware.text().strip(),firmware_verified=self.profile_verified.isChecked())
-            if any(profile.get(k,'')!=self.d.integration.get(k,'') for k in ('internet_url','internet_marker','speed_url')):profile['wan_verified']=False
+            if any(profile.get(k,'')!=self.d.integration.get(k,'') for k in ('internet_url','internet_marker','speed_url','upload_url','speed_gateway')):profile['wan_verified']=False
             if profile.get('wan_interface','')!=self.d.integration.get('wan_interface',''):profile['wan_counter_verified']=False
             if any(profile.get(k)!=self.d.integration.get(k,DEFAULT_PROFILE.get(k)) for k in ('method','snmp_version','snmp_port','url','oids','fields','device_model','firmware_version')):profile['wan_counter_verified']=False
             validate_profile(profile)
@@ -94,14 +95,20 @@ def distance_bearing(a,b):
 class DeviceDetails(QDialog):
     def __init__(self,w,d):
         super().__init__(w);self.w=w;self.id=d.id;self.previous=None;self.previous_at=None;self.setWindowTitle('Device details / dish alignment');self.resize(760,760)
-        layout=QVBoxLayout(self);self.text=QLabel();self.text.setWordWrap(True);self.text.setTextFormat(Qt.PlainText);layout.addWidget(self.text)
+        outer=QVBoxLayout(self);scroll=QScrollArea();scroll.setWidgetResizable(True);body=QWidget();scroll.setWidget(body);outer.addWidget(scroll,1);layout=QVBoxLayout(body);self.summary=QLabel();self.summary.setWordWrap(True);self.summary.setTextFormat(Qt.PlainText);self.summary.setObjectName('card');layout.addWidget(self.summary)
+        self.details_toggle=QCheckBox('Show detailed metrics / alignment tools');self.details_toggle.setChecked(w.store.setting('advanced_ui',False));layout.addWidget(self.details_toggle)
+        self.text=QLabel();self.text.setWordWrap(True);self.text.setTextFormat(Qt.PlainText);layout.addWidget(self.text)
         self.trend_metric=QComboBox();self.trend_metric.addItem('Quality (0–10)','quality');self.trend_metric.addItem('Signal (dBm)','signal_dbm');self.trend_metric.addItem('SNR (dB)','snr_db');self.trend_metric.addItem('TX CCQ (%)','tx_ccq');self.trend_metric.addItem('RX CCQ (%)','rx_ccq');self.trend_metric.currentIndexChanged.connect(self.refresh);layout.addWidget(self.trend_metric)
         self.graph=MetricGraph();layout.addWidget(self.graph)
         self.events=QTextEdit();self.events.setReadOnly(True);self.events.setMaximumHeight(120);layout.addWidget(self.events)
         self.feedback=QCheckBox('Alignment sound when measured quality improves (technician adjusts dish)');layout.addWidget(self.feedback)
-        row=QHBoxLayout();layout.addLayout(row)
+        row=QHBoxLayout();outer.addLayout(row)
         for title,fn in [('Open management',self.open),('Refresh / Test connection',self.refresh_now),('Secure settings',self.settings),('Camera setup',self.camera_setup),('Open stream',self.stream)]:
             b=QPushButton(title);b.clicked.connect(fn);row.addWidget(b)
+            if title in ('Camera setup','Open stream'):b.setVisible(d.kind.startswith('CCTV') or bool(d.service_url))
+        def show_details(enabled):
+            for widget in (self.text,self.trend_metric,self.graph,self.feedback):widget.setVisible(enabled)
+        self.details_toggle.toggled.connect(show_details);show_details(self.details_toggle.isChecked())
         self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(1500);self.refresh()
     def device(self):return next((d for d in self.w.devices if d.id==self.id),None)
     def open(self):
@@ -128,6 +135,14 @@ class DeviceDetails(QDialog):
         if not d:self.close();return
         r=self.w.measurements.latest.get(d.id,{});m=r.get('metrics',{});age=time.time()-r.get('at',0)
         score,label=quality(m,d.integration,age)
+        fresh=0<=age<=max(30,d.integration.get('poll_seconds',30)*3)
+        state=self.w.state(d);ping=self.w.latest.get(d.id,{})
+        latency=f"{ping['latency']:.1f} ms" if state in ('Online','Warning') and ping.get('latency') is not None else 'Unavailable'
+        simple=[d.name+' / '+(d.host or 'IP not configured'),'Ping: '+state+' • Latency: '+latency,'Service: '+(r.get('service','Not configured') if fresh else 'Unknown / no fresh check')]
+        if d.wan or d.kind.startswith('WAN'):simple.append('Internet: '+(r.get('internet','Not configured') if fresh else 'Unknown / no fresh check'))
+        if 'wireless' in d.kind or d.role or d.peer_id or 'signal_dbm' in m:simple.append('Wireless quality: '+label+(f' ({score}/10)' if score is not None else ''))
+        simple.append('Last collection: '+(f'{max(0,int(age))}s ago'+(' • stale' if not fresh else '') if r.get('at') else 'Not collected'))
+        self.summary.setText('\n'.join(simple))
         peer=next((a for a in self.w.devices if a.id==d.peer_id or a.id==d.parent),None)
         a=next((s for s in self.w.store.stations() if s.id==d.station_id),None);b=next((s for s in self.w.store.stations() if peer and s.id==peer.station_id),None);geo=distance_bearing(a,b)
         lines=[d.name+' • '+d.host,'Ping: '+self.w.state(d),'Wireless quality: '+label+(f' ({score}/10)' if score is not None else ''),'Peer: '+(peer.name if peer else 'Not assigned'),'Service: '+r.get('service','Not configured'),'Internet: '+r.get('internet','Not configured')]
@@ -229,7 +244,7 @@ class ProfessionalPanel(QWidget):
                 item=QTableWidgetItem(v)
                 if c==0:item.setData(Qt.UserRole,d.id)
                 if c==3:
-                    item.setToolTip(reason);item.setForeground(QColor({'Online':'#36d399','Degraded':'#fbbf24','Offline':'#fb7185','Unknown':'#9aacc0'}.get(health,'#9aacc0')))
+                    item.setToolTip(reason);item.setForeground(QColor(status_color(health,self.w.ui_theme)))
                 self.table.setItem(row,c,item)
             if selected and selected.id==d.id:self.table.selectRow(row)
         if rank:

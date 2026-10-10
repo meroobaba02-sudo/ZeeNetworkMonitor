@@ -8,30 +8,14 @@ from PySide6.QtGui import QColor, QPainter, QPen, QFont, QPainterPath
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit, QComboBox,
     QTabWidget, QDialog, QFormLayout, QSpinBox, QCheckBox, QDialogButtonBox, QMessageBox,
-    QFileDialog, QTextEdit, QSystemTrayIcon, QStyle, QScrollArea, QDateTimeEdit, QSplitter, QDoubleSpinBox)
+    QFileDialog, QTextEdit, QSystemTrayIcon, QStyle, QScrollArea, QDateTimeEdit, QSplitter, QDoubleSpinBox, QGroupBox, QGridLayout)
 from .core import Device, Store, TYPES, VERSION, diagnoses, export_csv, outages
 from .engine import Engine
 from .page_controls import PageControls
 
 COLORS = {'Online':'#36d399','Warning':'#fbbf24','No reply':'#fb7185','Unknown':'#9aacc0','Checking':'#60a5fa','Disabled':'#94a3b8','Probe error':'#fbbf24','Unconfigured':'#9aacc0'}
-STYLE = '''
-QWidget { background:#071827; color:#e2e8f0; font-family:Segoe UI; font-size:12px; }
-QMainWindow, QDialog { background:#101827; }
-QLabel#title { font-size:26px; font-weight:700; }
-QLabel#subtitle { color:#94a3b8; }
-QLabel#card { background:#1e293b; border-radius:9px; padding:14px; font-size:17px; font-weight:600; }
-QPushButton { background:#27364d; border:1px solid #34445c; padding:8px 13px; border-radius:6px; }
-QPushButton:hover { background:#36516d; }
-QPushButton:disabled { color:#64748b; }
-QPushButton#primary { background:#087f8c; border:0; font-weight:600; }
-QLineEdit,QComboBox,QSpinBox,QTextEdit,QDateTimeEdit { background:#1e293b; border:1px solid #34445c; border-radius:4px; padding:6px; }
-QTableWidget { background:#131e30; gridline-color:#27364d; border:1px solid #27364d; alternate-background-color:#19253a; }
-QHeaderView::section { background:#24324a; padding:8px; border:0; font-weight:600; }
-QTableWidget::item:selected { background:#214c62; }
-QTabBar::tab { background:#1e293b; padding:10px 18px; margin:3px; border-radius:5px; }
-QTabBar::tab:selected { background:#087f8c; }
-QCheckBox { spacing:8px; }
-'''
+from .customer_theme import stylesheet,apply_theme,status_color
+STYLE = stylesheet('dark')
 
 def stamp(t):
     return time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(t)) if t else '—'
@@ -102,6 +86,15 @@ class DeviceDialog(QDialog):
         help_text = QLabel('WAN independence needs a verified Windows path; this app does not create routes. Configure real read-only telemetry in Secure settings. Host/source edits clear relevant verification; missing readings stay unavailable.')
         help_text.setWordWrap(True)
         form.addRow(help_text)
+        self.advanced=QCheckBox('Show advanced routing, links and map settings')
+        self.advanced.setChecked(bool(parent and hasattr(parent,'store') and parent.store.setting('advanced_ui',False)))
+        basic={'name','host','location','notes','kind','station_id','dish_side','parent','interval','enabled','alerts'}
+        def show_advanced(value):
+            for key,widget in self.fields.items():
+                if key not in basic:form.setRowVisible(widget,value)
+            form.setRowVisible(self.map_enabled,value)
+        self.advanced.toggled.connect(show_advanced);show_advanced(self.advanced.isChecked())
+        outer.addWidget(self.advanced)
         scroll.setWidget(body)
         outer.addWidget(scroll)
         box = QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel)
@@ -264,6 +257,9 @@ class Window(PageControls,QMainWindow):
         self._last_view_key=None
         self._table_page=0
         self._resume_minimized=False
+        self.ui_theme=self.store.setting('ui_theme','dark')
+        if self.ui_theme not in ('dark','light'):self.ui_theme='dark'
+        apply_theme(QApplication.instance(),self.ui_theme)
         self.setWindowTitle(f'Zee Network Monitor • {VERSION}')
         self.resize(1360,790)
         self.setMinimumSize(980,650)
@@ -282,6 +278,9 @@ class Window(PageControls,QMainWindow):
         titles.addWidget(subtitle)
         head.addLayout(titles)
         head.addStretch()
+        self.mode_badge=QLabel('Professional Edition');self.mode_badge.setObjectName('subtitle');head.addWidget(self.mode_badge)
+        layout.addLayout(head)
+        head=QHBoxLayout()
         self.start_button=button('▶ Start monitoring',self.toggle,True)
         head.addWidget(self.start_button)
         head.addWidget(button('Ping all now',self.ping_all))
@@ -299,13 +298,16 @@ class Window(PageControls,QMainWindow):
         self.summary=QLabel()
         self.summary.setTextFormat(Qt.PlainText)
         self.summary.setObjectName('card')
+        self.summary.setStyleSheet('font-size:12px; padding:9px;')
         self.summary.setWordWrap(True)
         layout.addWidget(self.summary)
         self.tabs=QTabWidget()
         self.tabs.tabBar().hide()
         content=QHBoxLayout()
         self.navigation=QVBoxLayout()
-        content.addLayout(self.navigation)
+        nav_body=QWidget();nav_body.setLayout(self.navigation)
+        self.nav_scroll=QScrollArea();self.nav_scroll.setWidgetResizable(True);self.nav_scroll.setWidget(nav_body);self.nav_scroll.setFixedWidth(190);self.nav_scroll.setFrameShape(QScrollArea.NoFrame)
+        content.addWidget(self.nav_scroll)
         content.addWidget(self.tabs,1)
         layout.addLayout(content,1)
         dashboard=QWidget()
@@ -328,10 +330,9 @@ class Window(PageControls,QMainWindow):
         self.page_count=QLabel();paging.addWidget(self.page_count)
         paging.addWidget(button('Next page',lambda:self.table_page(1)))
         paging.addStretch();dash.addLayout(paging)
-        actions=QHBoxLayout()
-        for title,fn in [('Add device',self.add),('Edit',self.edit),('Delete',self.delete),('Ping selected',self.ping_selected),('Continuous selected',self.continuous_selected),('Refresh',self.reload),('Export summary',self.export_summary)]:
-            actions.addWidget(button(title,fn))
-        actions.addStretch()
+        actions=QGridLayout()
+        for i,(title,fn) in enumerate([('Add device',self.add),('Edit',self.edit),('Delete',self.delete),('Ping selected',self.ping_selected),('Continuous selected',self.continuous_selected),('Refresh',self.reload),('Export summary',self.export_summary)]):
+            actions.addWidget(button(title,fn),i//4,i%4)
         dash.addLayout(actions)
         self.table=QTableWidget(0,10)
         self.table.setHorizontalHeaderLabels(['Device / station','Host','Type','Location','Status','Latency','Loss (samples)','Checks OK / failed','Last check','WAN mode'])
@@ -361,24 +362,32 @@ class Window(PageControls,QMainWindow):
         self.pro_panel=ProfessionalPanel(self);self.tabs.addTab(self.pro_panel,'WAN / Radio')
         from .seven_wan import SevenWanPanel
         self.seven_wan=SevenWanPanel(self);self.tabs.addTab(self.seven_wan,'Internet speeds')
+        from .customer_dashboard import CustomerDashboard
+        self.overview=CustomerDashboard(self);self.tabs.addTab(self.overview,'Overview')
         self.page_picker=QComboBox();self.page_picker.setMaximumWidth(160);self.page_picker.currentIndexChanged.connect(self.change_page)
         self.navigation.addWidget(QLabel('NETWORK PAGE'));self.navigation.addWidget(self.page_picker)
-        self.navigation.addWidget(button('Network setup / paths',self.network_setup))
+        self.path_button=button('Network setup / paths',self.network_setup);self.navigation.addWidget(self.path_button)
         self.monitor_all_box=QCheckBox('Monitor all networks')
         self.monitor_all_box.setToolTip('Uses shared worker limits; each network must have an operator-verified path. Map/history stay on the selected page.')
         self.monitor_all_box.setChecked(self.monitor_all_enabled)
         self.monitor_all_box.toggled.connect(self.set_monitor_all)
         self.navigation.addWidget(self.monitor_all_box)
-        self.navigation.addWidget(button('Manage networks',self.manage_pages))
-        self.navigation.addWidget(button('Connect tower radios',self.connect_radios))
+        self.pages_button=button('Manage networks',self.manage_pages);self.navigation.addWidget(self.pages_button)
+        self.radios_button=button('Connect tower radios',self.connect_radios);self.navigation.addWidget(self.radios_button)
+        self.advanced_box=QCheckBox('Advanced controls');self.advanced_box.setToolTip('Shows additional setup tools; this is a display preference, not administrator access.');self.navigation.addWidget(self.advanced_box)
         self.nav_buttons=[]
-        for i,text in enumerate(['◉  Map','▤  Devices / WANs','◷  History','⌁  Topology','♧  Alerts','⚙  Settings','◈  WAN / Radio','⇅  Internet speeds']):
-            b=QPushButton(text);b.setObjectName('nav');b.setCheckable(True);b.setFixedWidth(148)
+        for i,text in enumerate(['◉  Map','▤  Devices / WANs','◷  History','⌁  Topology','♧  Alerts','⚙  Settings','◈  WAN / Radio','⇅  Internet speeds','▦  Overview']):
+            b=QPushButton(text);b.setObjectName('nav');b.setCheckable(True);b.setFixedWidth(166)
             b.clicked.connect(lambda checked=False,index=i:self.tabs.setCurrentIndex(index))
-            self.navigation.addWidget(b);self.nav_buttons.append(b)
+            if i==8:self.navigation.insertWidget(7,b)
+            else:self.navigation.addWidget(b)
+            self.nav_buttons.append(b)
         self.navigation.addStretch()
         self.tabs.currentChanged.connect(self.highlight_nav)
-        self.tabs.setCurrentIndex(0);self.highlight_nav(0)
+        self.advanced_box.toggled.connect(self.set_advanced)
+        self.set_advanced(self.store.setting('advanced_ui',False),persist=False)
+        self.tabs.setCurrentIndex(8);self.highlight_nav(8)
+        self.install_shortcuts()
         self.tray=QSystemTrayIcon(self.style().standardIcon(QStyle.SP_ComputerIcon),self)
         self.tray.setToolTip('Zee Network Monitor')
         if QSystemTrayIcon.isSystemTrayAvailable():
@@ -458,7 +467,7 @@ class Window(PageControls,QMainWindow):
     def events_page(self):
         page=QWidget()
         layout=QVBoxLayout(page)
-        tools=QHBoxLayout()
+        tools=QGridLayout()
         self.event_device=QComboBox()
         self.event_device.currentIndexChanged.connect(self.render_events)
         self.event_tower=QComboBox()
@@ -472,10 +481,10 @@ class Window(PageControls,QMainWindow):
             widget.setCalendarPopup(True)
             widget.setDisplayFormat('yyyy-MM-dd HH:mm')
             widget.dateTimeChanged.connect(self.render_events)
-        for w in (self.event_device,self.event_tower,self.event_search,self.event_from,self.event_to):
-            tools.addWidget(w)
-        tools.addWidget(button('Export events',self.export_events))
-        tools.addWidget(button('Pin / Unpin selected',self.pin_selected_event))
+        for i,w in enumerate((self.event_device,self.event_tower,self.event_search,self.event_from,self.event_to)):
+            tools.addWidget(w,i//3,i%3)
+        tools.addWidget(button('Export events',self.export_events),1,2)
+        tools.addWidget(button('Pin / Unpin selected',self.pin_selected_event),2,0)
         layout.addLayout(tools)
         self.event_table=QTableWidget(0,4)
         self.event_table.setHorizontalHeaderLabels(['Time (local)','Device','Type','Message'])
@@ -488,43 +497,54 @@ class Window(PageControls,QMainWindow):
         self.tabs.addTab(page,'Events & alerts')
 
     def settings_page(self):
-        page=QScrollArea();page.setWidgetResizable(True)
-        body=QWidget();page.setWidget(body)
-        form=QFormLayout(body)
-        self.notifications=QCheckBox('Desktop notifications (when system tray is available)')
-        self.notifications.setChecked(self.store.setting('notifications',True))
-        self.beep=QCheckBox('Beep on alert')
-        self.beep.setChecked(self.buzzer.enabled)
-        self.beep.setText('Enable repeating fault buzzer')
-        self.beep.toggled.connect(self.buzzer_button.setChecked)
-        self.recovery=QCheckBox('Recovery notifications')
-        self.recovery.setChecked(self.store.setting('recovery',True))
-        self.retention=QSpinBox()
+        page=QScrollArea();page.setWidgetResizable(True);body=QWidget();page.setWidget(body);layout=QVBoxLayout(body)
+        title=QLabel('Settings');title.setObjectName('title');layout.addWidget(title)
+        appearance=QGroupBox('Appearance & controls');form=QFormLayout(appearance);layout.addWidget(appearance)
+        self.theme_picker=QComboBox();self.theme_picker.addItem('Dark','dark');self.theme_picker.addItem('Light','light');self.theme_picker.setCurrentIndex(1 if self.ui_theme=='light' else 0);self.theme_picker.currentIndexChanged.connect(lambda *_:self.set_theme(self.theme_picker.currentData()));form.addRow('Theme (saved immediately)',self.theme_picker)
+        self.advanced_setting=QCheckBox('Show advanced setup and measurement controls');self.advanced_setting.setChecked(self.store.setting('advanced_ui',False));self.advanced_setting.toggled.connect(self.set_advanced);form.addRow(self.advanced_setting)
+        note=QLabel('Simple view keeps daily tasks visible. Advanced controls are a display preference; they do not grant admin access. Windows display scaling is supported.');note.setWordWrap(True);form.addRow(note)
+        group=QGroupBox('Alerts & detailed history');form=QFormLayout(group);layout.addWidget(group)
+        self.notifications=QCheckBox('Desktop notifications');self.notifications.setChecked(self.store.setting('notifications',True))
+        self.beep=QCheckBox('Enable repeating fault buzzer');self.beep.setChecked(self.buzzer.enabled);self.beep.toggled.connect(self.buzzer_button.setChecked)
+        self.recovery=QCheckBox('Recovery notifications');self.recovery.setChecked(self.store.setting('recovery',True))
+        for widget in (self.notifications,self.beep,self.recovery):form.addRow(widget)
         from .retention import history_hours
-        self.retention.setRange(1,87600)
-        self.retention.setValue(history_hours(self.store))
-        self.auto_cleanup=QCheckBox('Automatic background cleanup')
-        self.auto_cleanup.setChecked(self.store.setting('auto_cleanup',True))
-        for w in (self.notifications,self.beep,self.recovery):
-            form.addRow(w)
-        form.addRow('Detailed history (hours)',self.retention)
-        form.addRow(self.auto_cleanup)
-        self.cleanup_status=QLabel();self.cleanup_status.setWordWrap(True)
-        form.addRow(self.cleanup_status)
-        form.addRow(button('Clean expired records now',lambda:self.prune(manual=True)))
-        form.addRow(button('Advanced monitoring / history',self.performance_dialog))
-        form.addRow(button('Test buzzer (1 second)',self.test_buzzer))
-        form.addRow(button('Help / About',self.help_about))
-        form.addRow(button('Save settings',self.save_settings,True))
-        form.addRow(button('Backup database',self.backup))
-        form.addRow(button('Restore backup and close',self.restore_database))
-        form.addRow(button('License / activation',self.license_dialog))
-        form.addRow(button('Mobile HTTPS dashboard',self.mobile_dialog))
-        form.addRow(button('Add 5 unconfigured WAN templates',self.wan_templates))
-        info=QLabel('Database: '+str(self.store.path)+'\nProfessional preview: choose selected-page or all-network monitoring. Configure verified adapters under WAN / Radio. Secrets use Windows DPAPI. See PROFESSIONAL_GUIDE for supported measurements, routing, licensing and mobile setup. Windows 10 hardware and real Rocket M5 firmware remain unverified.')
-        info.setWordWrap(True)
-        form.addRow(info)
-        self.tabs.addTab(page,'Settings & scope')
+        self.retention=QSpinBox();self.retention.setRange(1,87600);self.retention.setValue(history_hours(self.store));form.addRow('Detailed history retention (hours)',self.retention)
+        self.auto_cleanup=QCheckBox('Automatic background cleanup');self.auto_cleanup.setChecked(self.store.setting('auto_cleanup',True));form.addRow(self.auto_cleanup)
+        note=QLabel('Default detailed history: 48 hours. Unresolved incidents and pinned records stay protected. Incident retention and archive options are under Advanced monitoring / history.');note.setWordWrap(True);form.addRow(note)
+        self.cleanup_status=QLabel();self.cleanup_status.setWordWrap(True);form.addRow(self.cleanup_status)
+        row=QHBoxLayout();row.addWidget(button('Save alert / history settings',self.save_settings,True));row.addWidget(button('Clean expired records now',lambda:self.prune(manual=True)));row.addWidget(button('Test buzzer',self.test_buzzer));form.addRow(row)
+        tools=QGroupBox('Setup, backup & support');grid=QGridLayout(tools);layout.addWidget(tools)
+        actions=[('Network setup / paths',self.network_setup),('Manage networks',self.manage_pages),('Connect tower radios',self.connect_radios),('Backup database',self.backup),('Restore backup and close',self.restore_database),('Advanced monitoring / history',self.performance_dialog),('Help / About',self.help_about),('Licence / activation',self.license_dialog),('Mobile HTTPS dashboard',self.mobile_dialog),('Add WAN templates',self.wan_templates)]
+        for i,(title,fn) in enumerate(actions):grid.addWidget(button(title,fn),i//2,i%2)
+        info=QLabel('Zee Network Monitor Professional • Created by Zeeshan Rasool\nDatabase: '+str(self.store.path)+'\nActual modem/radio profiles and Windows Internet paths require verification on your network.');info.setWordWrap(True);layout.addWidget(info);layout.addStretch();self.tabs.addTab(page,'Settings & scope')
+
+    def set_theme(self,name):
+        if name not in ('dark','light'):return
+        self.ui_theme=name;self.store.set_setting('ui_theme',name);apply_theme(QApplication.instance(),name);self.buzzer_status();self._dirty=True
+        if hasattr(self,'view_timer'):self.refresh_states()
+
+    def set_advanced(self,enabled,persist=True):
+        enabled=bool(enabled)
+        if persist:self.store.set_setting('advanced_ui',enabled)
+        for name in ('advanced_box','advanced_setting'):
+            widget=getattr(self,name,None)
+            if widget:widget.blockSignals(True);widget.setChecked(enabled);widget.blockSignals(False)
+        if hasattr(self,'nav_buttons'):
+            for index in (2,6):self.nav_buttons[index].setVisible(enabled or self.tabs.currentIndex()==index)
+            for widget in (self.path_button,self.pages_button,self.radios_button):widget.setVisible(enabled)
+            self.monitor_all_box.setVisible(enabled or self.monitor_all_enabled)
+        self.mode_badge.setText('Advanced controls' if enabled else 'Simple view')
+
+    def focus_device_search(self):
+        self.tabs.setCurrentIndex(1);self.search.setFocus();self.search.selectAll()
+
+    def install_shortcuts(self):
+        from PySide6.QtGui import QShortcut,QKeySequence
+        self.shortcuts=[]
+        for keys,index in [('Ctrl+1',8),('Ctrl+2',0),('Ctrl+3',1),('Ctrl+4',7)]:
+            shortcut=QShortcut(QKeySequence(keys),self);shortcut.activated.connect(lambda i=index:self.tabs.setCurrentIndex(i));self.shortcuts.append(shortcut)
+        shortcut=QShortcut(QKeySequence('Ctrl+F'),self);shortcut.activated.connect(self.focus_device_search);self.shortcuts.append(shortcut)
 
     def help_about(self):
         dialog=QDialog(self);dialog.setWindowTitle('Help / About');dialog.resize(700,520)
@@ -575,9 +595,12 @@ class Window(PageControls,QMainWindow):
                 if row:
                     self.latest[d.id]=dict(row)
         self.render_all()
+        if hasattr(self,'advanced_box'):self.set_advanced(self.advanced_box.isChecked(),persist=False)
 
     def highlight_nav(self,index):
         for i,b in enumerate(self.nav_buttons):b.setChecked(i==index)
+        self.summary.setVisible(True)
+        if hasattr(self,'advanced_box'):self.set_advanced(self.advanced_box.isChecked(),persist=False)
         self._dirty=True
         if hasattr(self,'view_timer'):self.refresh_states()
 
@@ -600,9 +623,9 @@ class Window(PageControls,QMainWindow):
 
     def buzzer_status(self):
         self.buzzer_button.setText('♪ Buzzer ON' if self.buzzer.enabled else '♪ Buzzer OFF')
-        self.buzzer_button.setStyleSheet('color:#28e3a0' if self.buzzer.enabled else 'color:#9aacc0')
+        self.buzzer_button.setStyleSheet('color:'+status_color('Online' if self.buzzer.enabled else 'Unknown',self.ui_theme if hasattr(self,'ui_theme') else 'dark'))
         self.alarm_status.setText('FAULT ALARM' if self.buzzer.playing else ('Silenced' if self.buzzer.active else 'Alarm clear'))
-        self.alarm_status.setStyleSheet('color:#ff6478' if self.buzzer.playing else 'color:#9aacc0')
+        self.alarm_status.setStyleSheet('color:'+status_color('No reply' if self.buzzer.playing else 'Unknown',self.ui_theme if hasattr(self,'ui_theme') else 'dark'))
 
     def refresh_map(self,draw=True):
         if draw and hasattr(self,'map_page'):self.map_page.refresh()
@@ -647,6 +670,7 @@ class Window(PageControls,QMainWindow):
                 self.topology.refresh(self.devices,{d.id:self.state(d) for d in self.devices});self.render_diagnosis()
             elif tab==4:self.render_events()
             elif tab==6:self.pro_panel.refresh()
+            elif tab==8:self.overview.refresh()
             self._dirty=False;self._last_view_key=key
         self.refresh_map(False)
         self.update_mobile()
@@ -685,6 +709,7 @@ class Window(PageControls,QMainWindow):
         self.topology.refresh(self.devices,{d.id:self.state(d) for d in self.devices})
         self.render_diagnosis()
         self.refresh_map()
+        if hasattr(self,'overview'):self.overview.refresh()
 
     def render_diagnosis(self):
         from .faults import evaluate
@@ -741,7 +766,7 @@ class Window(PageControls,QMainWindow):
                     item.setData(Qt.UserRole,d.id)
                     item.setToolTip('ID: '+d.id+'\n'+d.notes)
                 if col==4:
-                    item.setForeground(QColor(COLORS[state]))
+                    item.setForeground(QColor(status_color(state,self.ui_theme)))
                 self.table.setItem(row,col,item)
             if selected and selected.id==d.id:
                 self.table.selectRow(row)
@@ -1059,6 +1084,7 @@ class Window(PageControls,QMainWindow):
     def closeEvent(self,event):
         for dialog in self.details_windows:dialog.close()
         self.pro_panel.timer.stop()
+        self.seven_wan.timer.stop()
         self.license_timer.stop()
         self.cleaner.shutdown()
         self.measurements.shutdown()
@@ -1075,10 +1101,3 @@ class Window(PageControls,QMainWindow):
         self.store.close()
         event.accept()
 
-STYLE += '''
-QLabel#mapCard { background:#0c2135; border:1px solid #1d3b51; border-radius:8px; padding:13px; font-size:15px; font-weight:600; }
-QLabel#mapEvents { background:#0b2034; border:1px solid #1d3b51; border-radius:8px; padding:11px; color:#acc7dd; }
-QLabel#detailTitle {font-size:20px; font-weight:700;}
-QPushButton#nav {text-align:left; padding:12px; border:0; background:#0a2033;}
-QPushButton#nav:checked {background:#105369; border-left:3px solid #25e3aa;}
-'''

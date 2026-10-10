@@ -5,6 +5,7 @@ import time
 from PySide6.QtCore import Qt,QPointF,QRectF,Signal,QObject,QRunnable,QThreadPool
 from PySide6.QtGui import QColor,QPainter,QPen,QPainterPath,QFont
 from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QLineEdit,QFrame,QTextEdit,QSplitter,QScrollArea,QComboBox,QDialog,QMessageBox,QFileDialog,QInputDialog)
+from .customer_theme import status_color
 from .core import diagnoses,Device
 from . import regionmap
 from .towers import TowerDialog
@@ -440,7 +441,7 @@ class MapDashboard(QWidget):
         d=self.device()
         if d:
             state=w.state(d);s=w.store.stats(d.id);latest=w.latest.get(d.id,{})
-            self.name.setText(d.name);self.type.setText(d.kind+'\n'+d.location);self.status.setText('●  '+state);self.status.setStyleSheet('color:'+COLORS[state])
+            self.name.setText(d.name);self.type.setText(d.kind+'\n'+d.location);self.status.setText('●  '+state);self.status.setStyleSheet('color:'+status_color(state,w.ui_theme))
             latency=f"{latest['latency']:.1f} ms" if latest.get('latency') is not None else '—'
             loss=f"{s['loss']:.1f}%" if s['loss'] is not None else '—'
             self.metrics.setText(f'Latest latency  {latency}\nSample packet loss  {loss}')

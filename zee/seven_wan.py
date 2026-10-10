@@ -8,8 +8,8 @@ class SevenWanPanel(QWidget):
     def __init__(self,w):
         super().__init__(w);self.w=w;self.queue=[];self.active=None;self.generation=None;self.messages={};self.poll_queue=[]
         layout=QVBoxLayout(self)
-        title=QLabel('INTERNET CONNECTIONS • LIVE TRAFFIC & SPEED TESTS');title.setObjectName('title');layout.addWidget(title)
-        note=QLabel('Each modem has its own row. Live download/upload = verified WAN interface traffic. Test download/upload = controlled HTTPS transfers, not guaranteed maximum capacity. Start monitoring for live readings. Same-subnet LAN IPs alone do not select seven Internet paths.');note.setWordWrap(True);layout.addWidget(note)
+        title=QLabel('Internet connections');title.setObjectName('title');layout.addWidget(title)
+        note=QLabel('Live = verified WAN traffic. Test = controlled HTTPS throughput. Start monitoring for live readings. Same-LAN modem IPs alone do not select separate Internet paths.');note.setWordWrap(True);layout.addWidget(note)
         self.table=QTableWidget(7,9);self.table.setHorizontalHeaderLabels(['Modem / IP','Ping','Live ↓ Mbps','Live ↑ Mbps','Test ↓ Mbps','Test ↑ Mbps','Last test / age','WAN interface','Test status / path']);self.table.setSelectionBehavior(QTableWidget.SelectRows);self.table.setSelectionMode(QTableWidget.SingleSelection);self.table.setEditTriggers(QTableWidget.NoEditTriggers);self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents);self.table.horizontalHeader().setStretchLastSection(True);layout.addWidget(self.table,1)
         row=QHBoxLayout();layout.addLayout(row)
         for index,(title,fn) in enumerate([('Add modem',self.add),('Edit modem',self.edit),('WAN setup',self.setup),('Counter adapter',self.adapter),('Check all pings / traffic',self.poll),('Test selected',self.test_one),('Test all (sequential)',self.test_all),('Cancel tests',self.cancel_tests)]):

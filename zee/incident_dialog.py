@@ -1,7 +1,7 @@
 """Small, page-scoped incident history; acknowledgement never claims recovery."""
 import time
 from PySide6.QtCore import Qt,QTimer
-from PySide6.QtWidgets import QDialog,QVBoxLayout,QHBoxLayout,QCheckBox,QLabel,QPushButton,QTableWidget,QTableWidgetItem,QTextEdit,QFileDialog,QInputDialog,QMessageBox
+from PySide6.QtWidgets import QDialog,QVBoxLayout,QHBoxLayout,QCheckBox,QLabel,QPushButton,QTableWidget,QTableWidgetItem,QTextEdit,QFileDialog,QInputDialog,QMessageBox,QGridLayout
 from .core import export_csv
 
 class IncidentDialog(QDialog):
@@ -10,8 +10,9 @@ class IncidentDialog(QDialog):
         layout=QVBoxLayout(self);tools=QHBoxLayout();layout.addLayout(tools)
         self.all_pages=QCheckBox('Show history from all networks');self.all_pages.toggled.connect(self.refresh);tools.addWidget(self.all_pages)
         self.reduce=QCheckBox('Reduce repeated downstream notifications');self.reduce.setChecked(w.store.setting('correlate_alerts',True));self.reduce.toggled.connect(lambda value:w.store.set_setting('correlate_alerts',value));tools.addWidget(self.reduce)
+        actions=QHBoxLayout();layout.addLayout(actions)
         for title,fn in [('Acknowledge',self.ack),('Notes',self.notes),('Pin / unpin',self.pin),('Close unverified',self.close_unverified),('Export CSV',self.export)]:
-            b=QPushButton(title);b.clicked.connect(fn);tools.addWidget(b)
+            b=QPushButton(title);b.clicked.connect(fn);actions.addWidget(b)
         note=QLabel('Unobserved = no fresh evidence; incident remains unresolved. Acknowledgement does not silence the buzzer or mark recovery. Duration is elapsed time between observations, not proven continuous downtime. Latest 500 records shown.');note.setWordWrap(True);layout.addWidget(note)
         self.table=QTableWidget(0,8);self.table.setHorizontalHeaderLabels(['Network','Device / check','Status','Started','Last evidence','Resolved','Elapsed','Ack / pinned']);self.table.setSelectionBehavior(QTableWidget.SelectRows);self.table.setEditTriggers(QTableWidget.NoEditTriggers);self.table.itemSelectionChanged.connect(self.detail);layout.addWidget(self.table,1)
         self.text=QTextEdit();self.text.setReadOnly(True);self.text.setMaximumHeight(190);layout.addWidget(self.text)

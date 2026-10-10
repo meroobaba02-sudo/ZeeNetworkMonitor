@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import traceback
 from PySide6.QtCore import QTimer, QLockFile
-from PySide6.QtGui import QIcon,QPixmap,QColor
+from PySide6.QtGui import QIcon,QPixmap,QColor,QGuiApplication
 from PySide6.QtWidgets import QApplication, QMessageBox,QSplashScreen
 from zee.core import Store
 from zee.gui import Window, STYLE
@@ -18,6 +18,8 @@ def main():
     parser.add_argument('--smoke-test',action='store_true')
     parser.add_argument('--screenshot',type=Path)
     args=parser.parse_args()
+    from PySide6.QtCore import Qt
+    QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app=QApplication(sys.argv)
     app.setApplicationName('Zee Network Monitor')
     app.setStyleSheet(STYLE)
@@ -39,9 +41,9 @@ def main():
     try:
         from zee.recovery import restore_pending
         restore_pending(base)
-        pix=QPixmap(520,190);pix.fill(QColor('#081c2b'));splash=QSplashScreen(pix)
-        from PySide6.QtCore import Qt
-        splash.showMessage('Zee Network Monitor\nProfessional Edition\n\nCreated by Zeeshan Rasool',Qt.AlignCenter,QColor('#e1f0fa'));splash.show();app.processEvents()
+        from zee.customer_theme import splash_pixmap
+        from zee.core import VERSION
+        pix=splash_pixmap(VERSION,app.primaryScreen().devicePixelRatio());splash=QSplashScreen(pix);splash.show();app.processEvents()
         store=Store(base/'monitor.sqlite3')
         window=Window(store)
         assets=Path(getattr(sys,'_MEIPASS',Path(__file__).parent))/'assets'

@@ -1,6 +1,6 @@
 # Zee Network Monitor
 
-Windows desktop network monitor for towers, radios, WAN links and camera services. Current fault/incident release: **0.4.11**, owner-evaluation preview.
+Windows desktop network monitor for towers, radios, WAN links and camera services. Current customer GUI release: **0.4.12**, owner-evaluation preview.
 
 Download the setup or portable package from a successful [Windows Actions run](https://github.com/meroobaba02-sudo/ZeeNetworkMonitor/actions). No Python is needed on the customer's laptop. Keep the entire portable folder together.
 
@@ -21,3 +21,5 @@ Phase 5: real source-bound SNMP GET, model/firmware records and explicit profile
 Phase 6: evidence-based possible upstream/endpoint fault correlation, ICMP/service contradictions, independent WAN failures, persistent incident start/evidence/recovery, acknowledgement/notes/pins/CSV, cautious downstream notification reduction and protected retention. Schema 4 upgrade backs up schema 3 automatically. See docs/PHASE6_INCIDENTS.md.
 
 Phase 6.1: a dedicated Internet speeds panel separates per-modem WAN interface traffic from sequential, next-hop-checked HTTPS download/upload tests. See [setup and limits](docs/PHASE61_SEVEN_WANS.md). Seven shared-LAN IPs alone cannot select seven Internet paths.
+
+Phase 7: customer overview, responsive WAN cards, simple/advanced display controls, persistent dark/light themes, keyboard shortcuts and scrollable configuration/detail forms. See [customer GUI guide and acceptance evidence](docs/PHASE7_CUSTOMER_GUI.md). Admin Studio remains Phase 8.

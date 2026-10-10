@@ -1,4 +1,4 @@
-ZEE NETWORK MONITOR PROFESSIONAL v0.4.11
+ZEE NETWORK MONITOR PROFESSIONAL v0.4.12
 
 WINDOWS PAR CHALANA
 Successful GitHub Actions run se Setup ya Portable artifact download karen.
@@ -73,3 +73,5 @@ Close unverified sirf operator closure hai, recovery ka proof nahi.
 Schema 4 upgrade se pehle database ki automatic .pre-v0410.bak copy banti hai.
 Purana software chalana ho to schema 3 backup bhi restore karna zaroori hai.
 Details: PHASE6_INCIDENTS.md.
+
+Phase 7: App khulne par Overview dashboard milega. Internet speeds mein saat modem rows hain. Advanced controls se extra setup options dikhen ge. Settings se Dark/Light theme badal sakte hain. Ctrl+1 Overview, Ctrl+2 Map, Ctrl+3 Devices, Ctrl+4 Internet speeds, Ctrl+F device search. Advanced controls admin permission nahi hain; separate Admin Studio aglay phase mein hai.
