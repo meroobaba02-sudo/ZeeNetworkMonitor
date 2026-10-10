@@ -6,7 +6,7 @@ Download the setup or portable package from a successful [Windows Actions run](h
 
 Existing features include saved network pages, grouped tower maps, background ping, buzzer controls, history, configurable SNMP/HTTPS telemetry, WAN checks, paired read-only mobile access and an offline licence issuer. Firmware metrics require verified configuration and real-device testing. Selected-page monitoring is the default; optional all-network monitoring uses shared worker limits and operator-verified paths. The app does not create routes.
 
-The separate ZeeLicenseManager utility issues licences. Full Zee Admin Studio is planned for Phase 8; it is not included yet. Customer licensing enforcement requires an owner public key in the customer build. Never distribute the private signing key.
+The separate ZeeLicenseManager utility issues licences. Separate Zee Admin Studio now provides the Phase 8.1/8.2 local owner workflow. Customer licensing enforcement requires an owner public key in the customer build. Never distribute the private signing key.
 
 Windows CI tests packaging on Windows Server 2022. Physical Windows 10, real five-network routing, Rocket M5 readings, Android and old-laptop performance remain unverified.
 
@@ -25,3 +25,5 @@ Phase 6.1: a dedicated Internet speeds panel separates per-modem WAN interface t
 Phase 7: customer overview, responsive WAN cards, simple/advanced display controls, persistent dark/light themes, keyboard shortcuts and scrollable configuration/detail forms. See [customer GUI guide and acceptance evidence](docs/PHASE7_CUSTOMER_GUI.md). Admin Studio remains Phase 8.
 
 Phase 8.1 adds a separate ZeeAdminStudio.exe owner/viewer application with local authentication, customer/package/profile records, protected signing, audit checks and encrypted backups. [Scope and remaining Phase 8.2 work](docs/PHASE81_ADMIN_STUDIO.md). Existing customer monitoring and the legacy issuer utility remain available.
+
+Phase 8.2: signed v2 package permissions/device caps, customer branding and pinned profiles, owner Windows customer build runner, artifact-verified release history and signed offline installer verification. [Owner workflow, toolchain requirements and remaining online work](docs/PHASE82_CUSTOMER_BUILDS.md). Default download remains owner evaluation until your own public issuer/profile is provisioned.

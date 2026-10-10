@@ -21,9 +21,12 @@ def main():
     from PySide6.QtCore import Qt
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app=QApplication(sys.argv)
-    app.setApplicationName('Zee Network Monitor')
+    from zee.licensing import branding
+    app.setApplicationName(branding()['app_name'])
     app.setStyleSheet(STYLE)
-    base=args.data_dir or Path(os.environ.get('LOCALAPPDATA',Path.home()/'.local/share'))/'ZeeNetworkMonitor'
+    from zee.licensing import customer_profile
+    profile=customer_profile();data_name='ZeeCustomer-'+profile['profile_id'] if profile else 'ZeeNetworkMonitor'
+    base=args.data_dir or Path(os.environ.get('LOCALAPPDATA',Path.home()/'.local/share'))/data_name
     base.mkdir(parents=True,exist_ok=True)
     lock=QLockFile(str(base/'app.lock'))
     if not lock.tryLock(100):
@@ -43,7 +46,7 @@ def main():
         restore_pending(base)
         from zee.customer_theme import splash_pixmap
         from zee.core import VERSION
-        pix=splash_pixmap(VERSION,app.primaryScreen().devicePixelRatio());splash=QSplashScreen(pix);splash.show();app.processEvents()
+        pix=splash_pixmap(VERSION,app.primaryScreen().devicePixelRatio(),branding());splash=QSplashScreen(pix);splash.show();app.processEvents()
         store=Store(base/'monitor.sqlite3')
         window=Window(store)
         assets=Path(getattr(sys,'_MEIPASS',Path(__file__).parent))/'assets'
@@ -67,6 +70,10 @@ def main():
             QTimer.singleShot(500,finish)
         code=app.exec()
         if args.smoke_test and not failures:
+            import json
+            from zee.licensing import customer_profile,EXPECTED_PROFILE_SHA256,REQUIRE_ISSUER
+            profile=customer_profile()
+            (base/'customer-build-smoke.json').write_text(json.dumps({'title':window.windowTitle(),'branding':window.branding,'profile_id':profile['profile_id'] if profile else None,'require_issuer':REQUIRE_ISSUER,'profile_digest':EXPECTED_PROFILE_SHA256,'licence':status(base),'device_limit':window.policy.max_devices,'features':sorted(window.policy.features)}),encoding='utf-8')
             (base/'smoke-ok.txt').write_text('GUI startup and graceful shutdown passed.\n',encoding='utf-8')
         return 1 if failures else code
     except Exception:

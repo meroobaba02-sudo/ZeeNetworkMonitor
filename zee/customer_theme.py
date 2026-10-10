@@ -50,15 +50,16 @@ def apply_theme(app,name):
     for role,key in [(QPalette.Window,'bg'),(QPalette.Base,'panel'),(QPalette.AlternateBase,'raised'),(QPalette.WindowText,'text'),(QPalette.Text,'text'),(QPalette.Button,'raised'),(QPalette.ButtonText,'text'),(QPalette.Highlight,'accent')]:palette.setColor(role,QColor(c[key]))
     palette.setColor(QPalette.HighlightedText,QColor('#ffffff'));app.setPalette(palette);app.setStyleSheet(stylesheet(name))
 
-def splash_pixmap(version,dpr=1):
+def splash_pixmap(version,dpr=1,branding=None):
+    branding=branding or {'app_name':'ZEE / NETWORK MONITOR','watermark':'Created by Zeeshan Rasool'}
     dpr=max(1,min(4,dpr));pix=QPixmap(round(620*dpr),round(230*dpr));pix.setDevicePixelRatio(dpr);pix.fill(QColor('#091522'))
     p=QPainter(pix);p.setRenderHint(QPainter.Antialiasing)
     gradient=QLinearGradient(0,0,620,230);gradient.setColorAt(0,QColor('#12394a'));gradient.setColorAt(1,QColor('#091522'));p.fillRect(QRectF(0,0,620,230),gradient)
-    p.setPen(QColor('#65d7d1'));p.setFont(QFont('Segoe UI',12,QFont.Bold));p.drawText(32,45,'ZEE / NETWORK MONITOR')
+    p.setPen(QColor('#65d7d1'));p.setFont(QFont('Segoe UI',12,QFont.Bold));p.drawText(32,45,branding['app_name'])
     p.setPen(QColor('#eef5ff'));p.setFont(QFont('Segoe UI',24,QFont.Bold));p.drawText(32,93,'Your network. One clear view.')
     p.setFont(QFont('Segoe UI',10));p.setPen(QColor('#b3cbdc'));p.drawText(32,130,'Professional Edition  •  v'+version)
     p.drawText(32,161,'Loading saved devices and monitoring settings…')
-    p.drawText(32,203,'Created by Zeeshan Rasool');p.end();return pix
+    p.drawText(32,203,branding['watermark']);p.end();return pix
 
 
 def status_color(state,theme='dark'):

@@ -49,6 +49,11 @@ class Measurements(QObject):
         self.signals=Signals();self.signals.done.connect(self.complete)
         self.timer=QTimer(self);self.timer.timeout.connect(self.tick);self.timer.start(1000)
     def submit(self,d,speed=False,independent=False):
+        if hasattr(self.window,'policy'):
+            from .entitlements import category
+            policy=self.window.policy
+            if not self.window.permit_device(d):return False
+            if speed and not policy.allows('wan'):return False
         key=(d.id,speed)
         if self.cancel.is_set() or any(k[0]==d.id for k in self.pending) or len(self.pending)>=self.limit or not d.enabled or not d.host:return False
         page=self.window.page_for_device(d)

@@ -36,6 +36,7 @@ class Engine(QObject):
         super().__init__(parent)
         self.probe_fn = probe_fn
         self.prepare_probe = None
+        self.permit = None
         self.pool = QThreadPool(self)
         self.pool.setMaxThreadCount(8)
         self.pending = {}
@@ -53,6 +54,7 @@ class Engine(QObject):
         self.timer.start()
 
     def submit(self, d):
+        if self.permit and not self.permit(d):return False
         if self.closing or not d.enabled or not d.host or d.id in self.pending or len(self.pending)>=self.limit:
             return False
         fn=self.prepare_probe(d,self.probe_fn) if self.prepare_probe else self.probe_fn

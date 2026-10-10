@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users(name TEXT PRIMARY KEY,salt BLOB,verifier BLOB,r
 CREATE UNIQUE INDEX IF NOT EXISTS one_owner ON users(role) WHERE role='owner';
 CREATE TABLE IF NOT EXISTS records(kind TEXT,id TEXT PRIMARY KEY,name TEXT,payload TEXT,archived INTEGER DEFAULT 0);
 CREATE INDEX IF NOT EXISTS record_kind ON records(kind,name);
+CREATE TABLE IF NOT EXISTS builds(id TEXT PRIMARY KEY,profile_id TEXT,at REAL,report TEXT);
 CREATE TABLE IF NOT EXISTS licences(id TEXT PRIMARY KEY,customer_id TEXT,package_id TEXT,profile_id TEXT,machine TEXT,status TEXT,document TEXT,reason TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS audit(seq INTEGER PRIMARY KEY,at REAL,actor TEXT,action TEXT,target TEXT,detail TEXT,previous TEXT,digest TEXT);
 '''
@@ -162,12 +163,39 @@ class StudioStore:
         result={'type':'zee-reviewed-build-profile','version':1,'profile_id':id,'customer_id':customer['id'],'package_id':package['id'],'branding':{k:data[k] for k in ('app_name','watermark','logo_png')},'package':package['data'],'client_application':'Pending Phase 8.2; metadata is not client enforcement'}
         with self.db:self.audit(s['actor'],'profile-exported',id)
         return result
+    def signed_profile(self,token,id):
+        s=self.require(token,True);record=self.record(token,'profiles',id);data=record['data'];customer=self.record(token,'customers',data['customer_id']);package=self.record(token,'packages',data['package_id'])
+        payload={'type':'zee-customer-build','version':1,'product':PRODUCT,'profile_id':id,'customer_id':customer['id'],'package_id':package['id'],'customer':customer['name'],'branding':{k:data[k] for k in ('app_name','watermark','logo_png')},'entitlements':{k:package['data'][k] for k in ('features','max_devices')}}
+        document={'payload':payload,'signature':encode64(self.key(token).sign(canonical(payload)))}
+        from zee.build_profile import verify_profile
+        public=encode64(self.key(token).public_key().public_bytes_raw());verify_profile(document,public)
+        with self.db:self.audit(s['actor'],'customer-build-profile-signed',id)
+        return document,{'public_key':public}
+    def record_build(self,token,report,folder):
+        s=self.require(token,True)
+        from admin.customer_build import verify_report
+        verify_report(report,Path(folder));self.record(token,'profiles',report['profile_id'],active=False)
+        if report['profile_document']['payload']['customer_id']!=self.record(token,'profiles',report['profile_id'],active=False)['data']['customer_id']:raise ValueError('Build customer mismatch.')
+        if report['issuer_public']['public_key']!=encode64(self.key(token).public_key().public_bytes_raw()):raise ValueError('Build issuer mismatch.')
+        id=str(uuid.uuid4())
+        with self.db:self.db.execute('INSERT INTO builds VALUES(?,?,?,?)',(id,report['profile_id'],time.time(),json.dumps(report)));self.audit(s['actor'],'verified-build-recorded',id,report['version'])
+        return id
+    def builds(self,token):
+        self.require(token);return [dict(r)|{'data':json.loads(r['report'])} for r in self.db.execute('SELECT * FROM builds ORDER BY at DESC LIMIT 200')]
+    def release_manifest(self,token,id):
+        s=self.require(token,True);row=self.db.execute('SELECT * FROM builds WHERE id=?',(id,)).fetchone()
+        if not row:raise ValueError('Build result missing.')
+        report=json.loads(row['report']);artifact=next((a for a in report['artifacts'] if a['kind']=='installer'),None)
+        if not artifact:raise ValueError('This build has no installer; portable ZIP cannot be used as an installer update.')
+        payload={'type':'zee-offline-update','version':1,'product':PRODUCT,'profile_id':report['profile_id'],'app_version':report['version'],'filename':artifact['name'],'sha256':artifact['sha256'],'bytes':artifact['bytes']}
+        with self.db:self.audit(s['actor'],'offline-update-manifest-signed',id)
+        return {'payload':payload,'signature':encode64(self.key(token).sign(canonical(payload)))}
     def issue(self,token,customer_id,package_id,machine,profile_id=''):
         s=self.require(token,True);customer=self.record(token,'customers',customer_id);package=self.record(token,'packages',package_id)
         if profile_id:
             profile=self.record(token,'profiles',profile_id)['data']
             if (profile['customer_id'],profile['package_id'])!=(customer_id,package_id):raise ValueError('Build profile belongs to a different customer/package.')
-        id=str(uuid.uuid4());doc=issue_document(self.key(token),machine,customer['name'],package['name'],id,package['data']['days'])
+        id=str(uuid.uuid4());doc=issue_document(self.key(token),machine,customer['name'],package['name'],id,package['data']['days'],entitlements={k:package['data'][k] for k in ('features','max_devices')},customer_id=customer_id,profile_id=profile_id)
         with self.db:
             self.db.execute('INSERT INTO licences(id,customer_id,package_id,profile_id,machine,status,document) VALUES(?,?,?,?,?,?,?)',(id,customer_id,package_id,profile_id,machine,'Issued',json.dumps(doc)))
             self.audit(s['actor'],'licence-issued',id)

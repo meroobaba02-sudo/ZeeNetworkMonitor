@@ -20,6 +20,7 @@ class LicenseDialog(QDialog):
         else:
             expiry=time.strftime('%Y-%m-%d %H:%M:%S UTC',time.gmtime(state['expires'])) if state.get('expires') is not None else 'Perpetual'
             text=f"Activated: {state.get('edition','')}\nCustomer: {state.get('customer','')}\nReference: {state.get('reference','')}\nExpiry: {expiry}\nAuthorized PCs: 1"
+            if state.get('entitlements'):text+='\nDevice limit: '+str(self.w.policy.max_devices)+'\nFeatures: '+', '.join(sorted(self.w.policy.features))
         self.label.setText(text)
     def request(self):
         path,_=QFileDialog.getSaveFileName(self,'Export activation request','zee-activation-request.json','JSON (*.json)')
@@ -36,7 +37,10 @@ class LicenseDialog(QDialog):
         try:
             if not public_key_path().exists():raise ValueError('Owner verification key has not been provisioned in this build. See licensing setup guide.')
             if Path(path).stat().st_size>65536:raise ValueError('Licence file too large.')
-            doc=json.loads(Path(path).read_text());verify(doc,json.loads(public_key_path().read_text())['public_key'])
+            doc=json.loads(Path(path).read_text());payload=verify(doc,json.loads(public_key_path().read_text())['public_key'])
+            from .licensing import customer_profile
+            profile=customer_profile()
+            if profile and (payload.get('version')!=2 or payload.get('customer_id')!=profile['customer_id'] or payload.get('profile_id')!=profile['profile_id']):raise ValueError('Different customer profile.')
             target=self.w.store.path.parent/'license.json';temporary=target.with_suffix('.new');temporary.write_text(json.dumps(doc));temporary.replace(target);self.refresh();QMessageBox.information(self,'Activated','Licence accepted. Restart the application.')
         except Exception:QMessageBox.warning(self,'Activation rejected','Licence invalid, expired, wrong PC, or issuer key not provisioned. Contact the software owner.')
     def deactivate(self):
@@ -55,6 +59,7 @@ class MobileDialog(QDialog):
             b=QPushButton(title);b.clicked.connect(fn);layout.addWidget(b)
     def start(self):
         try:
+            if hasattr(self.w,'policy'):self.w.policy.require('mobile')
             if getattr(self.w,'mobile_server',None):raise ValueError('Dashboard already running; stop it to change address.')
             from .mobile import MobileServer,certificate
             host=self.host.text().strip();port=int(self.port.text())

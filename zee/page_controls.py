@@ -21,7 +21,8 @@ class PageControls:
         self.measurements.latest.clear();self.measurements.speed_latest.clear();self.telemetry_alerted.clear()
         self.start_button.setText('▶ Start monitoring');self.store.set_setting('active_page',id);self.reload()
     def monitor_devices(self):
-        return self.all_devices if self.monitor_all_enabled else self.devices
+        devices=self.all_devices if self.monitor_all_enabled else self.devices
+        return [d for d in devices if self.permit_device(d)] if hasattr(self,'policy') else devices
     def page_for_device(self,d):
         return self.network_pages.get(d.page_id)
     def prepare_network_probe(self,d,fn):
@@ -123,11 +124,14 @@ class PageControls:
         from .system_dialogs import LicenseDialog
         LicenseDialog(self).exec()
     def mobile_dialog(self):
+        if hasattr(self,'policy') and not self.policy.allows('mobile'):
+            QMessageBox.information(self,'Package permission','Mobile access is not included in this package.');return
         from .system_dialogs import MobileDialog
         MobileDialog(self).exec()
     def update_mobile(self):
         server=getattr(self,'mobile_server',None)
         if not server:return
+        if hasattr(self,'policy') and not self.policy.allows('mobile'):server.stop();self.mobile_server=None;return
         import time
         from .telemetry import quality
         from .wan import wan_health

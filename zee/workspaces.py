@@ -57,6 +57,12 @@ class WorkspaceStore:
         with self.db:
             self.db.execute('INSERT INTO pages VALUES(?,?)',(p.id,json.dumps(asdict(p))))
             for s in newstations:self.db.execute('INSERT INTO stations VALUES(?,?)',(s.id,json.dumps(asdict(s))))
+            if hasattr(self,'policy'):
+                from .entitlements import category
+                self.policy.require('monitoring')
+                if self.db.execute('SELECT COUNT(*) FROM devices').fetchone()[0]+len(newdevices)>self.policy.max_devices:raise ValueError('Import exceeds package device limit.')
+                for d in newdevices:self.policy.require(category(d))
+                if newstations:self.policy.require('map')
             for d in newdevices:self.db.execute('INSERT INTO devices VALUES(?,?)',(d.id,json.dumps(asdict(d))))
         return p
     def delete_page(self,id):

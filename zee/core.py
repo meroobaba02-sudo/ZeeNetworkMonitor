@@ -12,7 +12,7 @@ from .workspaces import WorkspaceStore,NetworkPage
 from .incidents import IncidentStore,SCHEMA as INCIDENT_SCHEMA
 from pathlib import Path
 
-VERSION = '0.4.13'
+VERSION = '0.4.14'
 TYPES = ['WAN / Internet', 'Rocket M5 / wireless radio', 'Router', 'Switch', 'CCTV / NVR / camera', 'Server / monitoring agent', 'Other']
 
 
@@ -174,6 +174,7 @@ class Store(WorkspaceStore,IncidentStore):
         return [Station(**json.loads(r[0])) for r in self.db.execute('SELECT data FROM stations ORDER BY rowid')]
 
     def save_station(self, station):
+        if hasattr(self,'policy'):self.policy.require('map')
         station.validate()
         if station.page_id not in {p.id for p in self.pages()}:raise ValueError('Network no longer exists.')
         with self.db:
@@ -194,6 +195,10 @@ class Store(WorkspaceStore,IncidentStore):
 
     def save(self, device):
         device.validate()
+        if hasattr(self,'policy') and not self.db.execute('SELECT 1 FROM devices WHERE id=?',(device.id,)).fetchone():
+            from .entitlements import category
+            self.policy.require('monitoring');self.policy.require(category(device))
+            if self.db.execute('SELECT COUNT(*) FROM devices').fetchone()[0]>=self.policy.max_devices:raise ValueError('Package device limit reached. Delete an unused device or request a larger package.')
         if device.page_id not in {p.id for p in self.pages()}:raise ValueError('Network no longer exists.')
         if device.station_id and any(s.id==device.station_id and s.page_id!=device.page_id for s in self.stations()):raise ValueError('Tower belongs to a different network.')
         if device.station_id and device.station_id not in {s.id for s in self.stations()}:

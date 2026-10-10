@@ -69,7 +69,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         shell: pwsh
         run: |
-          $setup = Join-Path $PWD 'release/ZeeNetworkMonitor-Setup-Windows-v0.4.13.exe'
+          $setup = Join-Path $PWD 'release/ZeeNetworkMonitor-Setup-Windows-v0.4.14.exe'
           $install = Join-Path $env:LOCALAPPDATA 'Programs/ZeeNetworkMonitor'
           $data = Join-Path $env:LOCALAPPDATA 'ZeeNetworkMonitor'
           New-Item -ItemType Directory -Force $data | Out-Null
@@ -88,30 +88,37 @@ jobs:
           if (-not (Test-Path (Join-Path $data 'upgrade-test.txt')) -or -not (Test-Path (Join-Path $data 'monitor.sqlite3'))) { throw 'Uninstall removed user data' }
           if (Test-Path (Join-Path $install 'ZeeNetworkMonitor.exe')) { throw 'Uninstall left executable' }
           'Install, desktop/Start Menu, installed launch, upgrade and uninstall passed on Windows Server 2022; physical Windows 10 untested.' | Set-Content release/INSTALLER_TEST_REPORT.txt
+      - name: Verify disposable signed customer build and activation
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python scripts/verify_customer_build.py
+          if ($LASTEXITCODE -ne 0) { throw "Customer build integration failed" }
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeNetworkMonitor-Setup-Windows
           path: |
-            release/ZeeNetworkMonitor-Setup-Windows-v0.4.13.exe
+            release/ZeeNetworkMonitor-Setup-Windows-v0.4.14.exe
             release/INSTALLER_TEST_REPORT.txt
+            release/CUSTOMER_BUILD_TEST_REPORT.txt
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeNetworkMonitor-Portable-Windows
-          path: release/ZeeNetworkMonitor-Portable-Windows-v0.4.13.zip
+          path: release/ZeeNetworkMonitor-Portable-Windows-v0.4.14.zip
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeLicenseManager-Admin
-          path: release/ZeeLicenseManager-Admin-v0.4.13.zip
+          path: release/ZeeLicenseManager-Admin-v0.4.14.zip
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeAdminStudio-Owner
-          path: release/ZeeAdminStudio-Owner-v0.4.13.zip
+          path: release/ZeeAdminStudio-Owner-v0.4.14.zip
           if-no-files-found: error
           retention-days: 30
       - name: Upload test diagnostics
@@ -123,6 +130,8 @@ jobs:
             windows-tests.xml
             phase3-benchmark-windows.json
             build/ZeeNetworkMonitor/warn-ZeeNetworkMonitor.txt
+            release/CUSTOMER_BUILD_FAILURE.log
+            release/CUSTOMER_BUILD_TEST_REPORT.txt
             ${{ runner.temp }}/zee-smoke/diagnostic.log
             release/INSTALLER_TEST_REPORT.txt
           if-no-files-found: ignore

@@ -118,3 +118,21 @@ def test_actual_windows_studio_key_signing_and_restore(tmp_path):
         backup=s.backup(t,BACKUP_PASSWORD);s.restore(t,backup,BACKUP_PASSWORD);t=s.login('owner',PASSWORD)
         assert s.initialize_key(t)==public
     finally:s.close()
+
+def test_signed_build_profiles_and_release_history_are_owner_only(store,tmp_path):
+    from zee.build_profile import verify_profile
+    from admin.customer_build import hash_file
+    from zee.updates import verify_update
+    s,t=store;c,p,profile=records(s,t);s.initialize_key(t);doc,public=s.signed_profile(t,profile)
+    payload=verify_profile(doc,public['public_key']);assert payload['entitlements']['max_devices']==100 and payload['branding']['app_name']=='Zee Network Monitor'
+    id,license=s.issue(t,c,p,'a'*64,profile);assert license['payload']['version']==2 and license['payload']['profile_id']==profile
+    artifact=tmp_path/'fixture-installer.exe';artifact.write_bytes(b'only-a-hash-fixture')
+    report={'type':'zee-customer-build-result','status':'passed','version':'0.4.15','profile_id':profile,'profile_document':doc,'issuer_public':public,'checks':{'tests':True,'frozen_launch':True,'content_audit':True},'artifacts':[{'name':artifact.name,'sha256':hash_file(artifact),'bytes':artifact.stat().st_size,'kind':'installer'}]}
+    build=s.record_build(t,report,tmp_path);assert s.builds(t)[0]['id']==build
+    manifest=s.release_manifest(t,build);assert verify_update(manifest,public['public_key'],profile,'0.4.14',artifact)['app_version']=='0.4.15'
+    s.add_viewer(t,'viewer','fixture-viewer-password');v=s.login('viewer','fixture-viewer-password')
+    assert s.builds(v)
+    for action in [lambda:s.signed_profile(v,profile),lambda:s.record_build(v,report,tmp_path),lambda:s.release_manifest(v,build)]:
+        with pytest.raises(PermissionError):action()
+    artifact.write_bytes(b'changed')
+    with pytest.raises(ValueError):s.record_build(t,report,tmp_path)

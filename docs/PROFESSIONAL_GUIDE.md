@@ -1,4 +1,4 @@
-# Zee Network Monitor Professional 0.4.13 — owner evaluation preview
+# Zee Network Monitor Professional 0.4.14 — owner evaluation preview
 
 Created by Zeeshan Rasool
 
@@ -113,8 +113,10 @@ SNMP v1/v2c read-only GET now binds the selected literal IPv4/non-scoped IPv6 lo
 Secure settings records model/firmware and provides a profile verification checkbox. Editing mapping/model/firmware/method/version clears it; the operator must validate and tick again. Invalid numeric radio values and unsupported link-state enums remain unavailable. Counter64 integer precision is preserved. WAN interface traffic requires a separate interface name and counter attestation; rate baselines reject resets, reboot evidence and stale gaps, with monotonic collection timing. Changed WAN endpoints/marker/source clear WAN attestation. Saving integration/WAN settings stops monitoring, invalidates old workers and clears old measurements; press Start again.
 Details, score formula, evidence, blocked actual-device checks and rollback: PHASE5_INTELLIGENCE.md.
 
-## v0.4.13 evidence and persistent incidents
+## v0.4.14 evidence and persistent incidents
 Topology diagnosis counts only fresh threshold failures. A common-upstream possibility needs at least two recent downstream failures and no fresh replying descendants; confidence is qualitative Medium at most, never physical failure certification. Fresh application responses contradict total unreachability when ICMP fails. WAN external failures, wireless quality, configured service failures and ICMP performance warnings have separate incident categories.
 Events & alerts > Incident history shows page-scoped observations, optional all-network history, start/last evidence/resolution/elapsed duration, notes, acknowledgement, pinning and CSV. Unknown/stale/disabled/edited-context evidence never heals an incident. Restart marks unresolved incidents Unobserved until new observations. Recovery requires a fresh healthy result for that specific check and configuration. Elapsed duration may include monitoring gaps; no continuous downtime claim. Acknowledge is not buzzer silence. Operator closure is explicitly unverified.
 Bounded background cleanup preserves unresolved and pinned incident rows; resolved unpinned rows use incident retention days (0 keeps them). Repeated downstream desktop notifications can be reduced only for an observed correlated upstream possibility; per-device incidents and alarms remain. Existing notifications that arrived before correlation are not retracted.
 Database schema is now 4; an existing schema 3 database is backed up to monitor.sqlite3.pre-v0410.bak before migration. Restore supports schema 4. Older v0.4.9 code cannot open schema 4: use the earlier full-data backup/schema 3 database for rollback. Details and tests: PHASE6_INCIDENTS.md.
+
+Current Admin Studio/customer package workflow: see PHASE82_CUSTOMER_BUILDS.md. Older phase documents describe historical behavior; v2 licence/profile enforcement starts in v0.4.14.

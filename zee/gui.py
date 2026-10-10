@@ -229,6 +229,9 @@ class Window(PageControls,QMainWindow):
     def __init__(self,store):
         super().__init__()
         self.store=store
+        from .licensing import status,customer_profile,branding
+        from .entitlements import from_status
+        self.branding=branding();self.policy=from_status(status(store.path.parent),customer_profile());store.policy=self.policy
         self.store.suspend_incidents()
         self.page_id=store.setting('active_page','default')
         self.page_snapshot=self.current_page()
@@ -243,6 +246,7 @@ class Window(PageControls,QMainWindow):
         self.details_windows=[]
         self.engine=Engine(self,probe_fn=self.scoped_probe)
         self.engine.prepare_probe=self.prepare_network_probe
+        self.allowed_device_ids=set();self.engine.permit=self.permit_device
         self.engine.result.connect(self.result)
         self.engine.busy_changed.connect(self.busy)
         self.states={}
@@ -260,7 +264,7 @@ class Window(PageControls,QMainWindow):
         self.ui_theme=self.store.setting('ui_theme','dark')
         if self.ui_theme not in ('dark','light'):self.ui_theme='dark'
         apply_theme(QApplication.instance(),self.ui_theme)
-        self.setWindowTitle(f'Zee Network Monitor • {VERSION}')
+        self.setWindowTitle(self.branding['app_name']+' • '+VERSION)
         self.resize(1360,790)
         self.setMinimumSize(980,650)
         root=QWidget()
@@ -269,7 +273,7 @@ class Window(PageControls,QMainWindow):
         layout.setContentsMargins(22,18,22,18)
         head=QHBoxLayout()
         titles=QVBoxLayout()
-        title=QLabel('ZEE  /  NETWORK MONITOR PROFESSIONAL')
+        title=QLabel(self.branding['app_name']);title.setTextFormat(Qt.PlainText)
         title.setObjectName('title')
         title.setStyleSheet('font-size:20px; font-weight:700;')
         subtitle=QLabel('Network pages • Live map • Professional preview')
@@ -277,6 +281,10 @@ class Window(PageControls,QMainWindow):
         titles.addWidget(title)
         titles.addWidget(subtitle)
         head.addLayout(titles)
+        if self.branding['logo_png']:
+            import base64
+            from PySide6.QtGui import QPixmap
+            logo=QPixmap();logo.loadFromData(base64.b64decode(self.branding['logo_png']),'PNG');logo_label=QLabel();logo_label.setPixmap(logo.scaled(64,64,Qt.KeepAspectRatio,Qt.SmoothTransformation));head.addWidget(logo_label)
         head.addStretch()
         self.mode_badge=QLabel('Professional Edition');self.mode_badge.setObjectName('subtitle');head.addWidget(self.mode_badge)
         layout.addLayout(head)
@@ -389,11 +397,11 @@ class Window(PageControls,QMainWindow):
         self.tabs.setCurrentIndex(8);self.highlight_nav(8)
         self.install_shortcuts()
         self.tray=QSystemTrayIcon(self.style().standardIcon(QStyle.SP_ComputerIcon),self)
-        self.tray.setToolTip('Zee Network Monitor')
+        self.tray.setToolTip(self.branding['app_name'])
         if QSystemTrayIcon.isSystemTrayAvailable():
             self.tray.show()
         self.statusBar().showMessage('Ready • Monitoring is stopped')
-        self.statusBar().addPermanentWidget(QLabel('Created by Zeeshan Rasool'))
+        self.watermark=QLabel(self.branding['watermark']);self.watermark.setTextFormat(Qt.PlainText);self.statusBar().addPermanentWidget(self.watermark)
         from .resources import Usage
         self.resource_usage=Usage();self.resource_label=QLabel()
         self.resource_label.setToolTip('This app only. CPU: 100% = one core. RAM: working set.')
@@ -415,11 +423,50 @@ class Window(PageControls,QMainWindow):
         self.store.event('','application','Application started')
         self.reload()
         self.prune()
+        self.apply_package_ui()
         self.license_timer=QTimer(self);self.license_timer.timeout.connect(self.check_licence);self.license_timer.start(60000)
+
+    def permit_device(self,d):
+        from .entitlements import category
+        return self.policy.allows('monitoring') and self.policy.allows(category(d)) and d.id in self.allowed_device_ids
+
+    def apply_package_ui(self):
+        self.allowed_device_ids=self.policy.selected(self.store.devices())
+        for index,feature in [(0,'map'),(6,'wireless'),(7,'wan')]:
+            allowed=any(self.policy.allows(f) for f in ('wan','wireless','cctv')) if index==6 else self.policy.allows(feature);self.tabs.setTabEnabled(index,allowed);self.nav_buttons[index].setEnabled(allowed);self.nav_buttons[index].setToolTip('' if allowed else 'Not included in this package')
+        self.start_button.setEnabled(self.policy.allows('monitoring'))
+        self.mode_badge.setToolTip('Package limit: '+str(self.policy.max_devices)+' devices; features: '+', '.join(sorted(self.policy.features)))
+        count=len(self.store.devices())
+        if count>self.policy.max_devices:self.statusBar().showMessage(f'Package limit: {self.policy.max_devices}. Only the first saved devices within this limit are monitored; other records are retained.')
+
+    def verify_offline_update(self):
+        from .licensing import customer_profile,public_key_path,status
+        import json
+        profile=customer_profile()
+        if not profile or not status(self.store.path.parent)['valid']:
+            QMessageBox.information(self,'Customer update','This needs an activated customer-specific build.');return
+        manifest,_=QFileDialog.getOpenFileName(self,'Owner-signed update manifest','','JSON (*.json)')
+        if not manifest:return
+        installer,_=QFileDialog.getOpenFileName(self,'Matching downloaded installer','','Installer (*.exe)')
+        if not installer:return
+        try:
+            if Path(manifest).stat().st_size>65536:raise ValueError('Manifest too large.')
+            from .updates import verify_update
+            p=verify_update(json.loads(Path(manifest).read_text()),json.loads(public_key_path().read_text())['public_key'],profile['profile_id'],VERSION,installer)
+            QMessageBox.information(self,'Installer verified','Owner signature, customer profile and file hash match version '+p['app_version']+'. Close this application, then run the verified installer yourself. Nothing is installed automatically.')
+        except Exception:QMessageBox.warning(self,'Update rejected','Signature, customer, version or installer integrity did not match.')
 
     def check_licence(self):
         from .licensing import status
-        if not status(self.store.path.parent)['valid']:
+        from .licensing import customer_profile
+        from .entitlements import from_status
+        state=status(self.store.path.parent)
+        try:policy=from_status(state,customer_profile())
+        except Exception:state={'valid':False};policy=from_status(state)
+        if policy!=self.policy:
+            self.engine.invalidate();self.measurements.stop();self.requested.clear();self.policy=policy;self.store.policy=policy;self.apply_package_ui()
+            if getattr(self,'mobile_server',None) and not policy.allows('mobile'):self.mobile_server.stop();self.mobile_server=None
+        if not state['valid']:
             self.engine.stop();self.measurements.stop();self.requested.clear();self.buzzer.shutdown()
             QMessageBox.warning(self,'Licence expired or invalid','Monitoring is stopped. Import a valid licence on next launch.');self.close()
 
@@ -515,9 +562,9 @@ class Window(PageControls,QMainWindow):
         self.cleanup_status=QLabel();self.cleanup_status.setWordWrap(True);form.addRow(self.cleanup_status)
         row=QHBoxLayout();row.addWidget(button('Save alert / history settings',self.save_settings,True));row.addWidget(button('Clean expired records now',lambda:self.prune(manual=True)));row.addWidget(button('Test buzzer',self.test_buzzer));form.addRow(row)
         tools=QGroupBox('Setup, backup & support');grid=QGridLayout(tools);layout.addWidget(tools)
-        actions=[('Network setup / paths',self.network_setup),('Manage networks',self.manage_pages),('Connect tower radios',self.connect_radios),('Backup database',self.backup),('Restore backup and close',self.restore_database),('Advanced monitoring / history',self.performance_dialog),('Help / About',self.help_about),('Licence / activation',self.license_dialog),('Mobile HTTPS dashboard',self.mobile_dialog),('Add WAN templates',self.wan_templates)]
+        actions=[('Network setup / paths',self.network_setup),('Manage networks',self.manage_pages),('Connect tower radios',self.connect_radios),('Backup database',self.backup),('Restore backup and close',self.restore_database),('Advanced monitoring / history',self.performance_dialog),('Help / About',self.help_about),('Licence / activation',self.license_dialog),('Mobile HTTPS dashboard',self.mobile_dialog),('Add WAN templates',self.wan_templates),('Verify offline installer update',self.verify_offline_update)]
         for i,(title,fn) in enumerate(actions):grid.addWidget(button(title,fn),i//2,i%2)
-        info=QLabel('Zee Network Monitor Professional • Created by Zeeshan Rasool\nDatabase: '+str(self.store.path)+'\nActual modem/radio profiles and Windows Internet paths require verification on your network.');info.setWordWrap(True);layout.addWidget(info);layout.addStretch();self.tabs.addTab(page,'Settings & scope')
+        info=QLabel(self.branding['app_name']+' • '+self.branding['watermark']+'\nDatabase: '+str(self.store.path)+'\nActual modem/radio profiles and Windows Internet paths require verification on your network.');info.setWordWrap(True);layout.addWidget(info);layout.addStretch();self.tabs.addTab(page,'Settings & scope')
 
     def set_theme(self,name):
         if name not in ('dark','light'):return
@@ -549,7 +596,7 @@ class Window(PageControls,QMainWindow):
     def help_about(self):
         dialog=QDialog(self);dialog.setWindowTitle('Help / About');dialog.resize(700,520)
         layout=QVBoxLayout(dialog);text=QTextEdit();text.setReadOnly(True)
-        text.setPlainText(f"Zee Network Monitor {VERSION}\nCreated by Zeeshan Rasool\n\nFIRST NETWORK\nManage networks > Add. Select the page, then Map > Add tower. Devices > Add device: enter name and management IP, select tower, save. Start monitoring. Selected page by default; Monitor all networks checks all active pages.\n\nRADIO / WAN\nWAN / Radio > select device > Configure adapter. Use a verified firmware profile and real OIDs/API fields. Ping is separate from wireless quality and Internet reachability. Missing measurements remain Unknown/Unavailable. Traffic rate is usage, not capacity. Controlled speed tests consume data; automatic tests are off by default.\n\nFIVE NETWORKS\nConfigure Windows interfaces and routes first. Page source IP selects the source where supported; gateway hints do not create routes. Overlapping subnets require separate routing/interface setup.\n\nCCTV\nSet HTTP/HTTPS management and optional RTSP endpoint. Service status is separate from ping; no continuous video preview.\n\nMOBILE\nSettings > Mobile HTTPS dashboard. Explicitly start the service, verify certificate fingerprint, then pair from a phone. Remote access requires your configured VPN.\n\nSAFETY / BACKUP\nSettings > Backup database. Credentials use Windows DPAPI and are not included in configuration exports. Licence manager belongs to the owner. This owner-evaluation build has no issuer key provisioned.\n\nTESTING\nReal Rocket firmware, physical Windows 10 and phone compatibility require field testing. See the packaged PROFESSIONAL_GUIDE for details.")
+        text.setPlainText(f"{self.branding['app_name']} {VERSION}\n{self.branding['watermark']}\n\nFIRST NETWORK\nManage networks > Add. Select the page, then Map > Add tower. Devices > Add device: enter name and management IP, select tower, save. Start monitoring. Selected page by default; Monitor all networks checks all active pages.\n\nRADIO / WAN\nWAN / Radio > select device > Configure adapter. Use a verified firmware profile and real OIDs/API fields. Ping is separate from wireless quality and Internet reachability. Missing measurements remain Unknown/Unavailable. Traffic rate is usage, not capacity. Controlled speed tests consume data; automatic tests are off by default.\n\nFIVE NETWORKS\nConfigure Windows interfaces and routes first. Page source IP selects the source where supported; gateway hints do not create routes. Overlapping subnets require separate routing/interface setup.\n\nCCTV\nSet HTTP/HTTPS management and optional RTSP endpoint. Service status is separate from ping; no continuous video preview.\n\nMOBILE\nSettings > Mobile HTTPS dashboard. Explicitly start the service, verify certificate fingerprint, then pair from a phone. Remote access requires your configured VPN.\n\nSAFETY / BACKUP\nSettings > Backup database. Credentials use Windows DPAPI and are not included in configuration exports. Licence manager belongs to the owner. See Licence / activation for this build’s issuer and package status.\n\nTESTING\nReal Rocket firmware, physical Windows 10 and phone compatibility require field testing. See the packaged PROFESSIONAL_GUIDE for details.")
         layout.addWidget(text);layout.addWidget(button('Close',dialog.accept));dialog.exec()
 
     def reload(self):
@@ -562,6 +609,7 @@ class Window(PageControls,QMainWindow):
         for p in pages:self.page_picker.addItem(p.name,p.id)
         self.page_picker.setCurrentIndex(self.page_picker.findData(self.page_id));self.page_picker.blockSignals(False)
         self.network_pages={p.id:p for p in self.store.pages()}
+        self.allowed_device_ids=self.policy.selected(self.store.devices())
         self.all_devices=[d for d in self.store.devices() if d.page_id in self.network_pages and not self.network_pages[d.page_id].archived]
         self.devices=[d for d in self.all_devices if d.page_id==self.page_id]
         from .network_paths import ambiguous_hosts
@@ -598,6 +646,7 @@ class Window(PageControls,QMainWindow):
         if hasattr(self,'advanced_box'):self.set_advanced(self.advanced_box.isChecked(),persist=False)
 
     def highlight_nav(self,index):
+        if not self.tabs.isTabEnabled(index):self.tabs.setCurrentIndex(8);return
         for i,b in enumerate(self.nav_buttons):b.setChecked(i==index)
         self.summary.setVisible(True)
         if hasattr(self,'advanced_box'):self.set_advanced(self.advanced_box.isChecked(),persist=False)
@@ -679,6 +728,7 @@ class Window(PageControls,QMainWindow):
         self._table_page=max(0,self._table_page+delta);self.render_table()
 
     def state(self,d):
+        if hasattr(self,'policy') and not self.permit_device(d):return 'Package restricted'
         if not d.enabled:
             return 'Disabled' if d.host else 'Unconfigured'
         if d.id in self.engine.pending:
@@ -1051,6 +1101,10 @@ class Window(PageControls,QMainWindow):
                 QMessageBox.warning(self,'Backup failed',str(e))
 
     def wan_templates(self):
+        if not self.policy.allows('wan'):
+            QMessageBox.information(self,'Package permission','WAN monitoring is not included in this package.');return
+        if len(self.store.devices())+7>self.policy.max_devices:
+            QMessageBox.information(self,'Device limit','Seven templates would exceed your package limit. Add individual modems instead.');return
         existing={d.wan for d in self.devices}
         for i in range(1,6):
             if i not in existing:
@@ -1058,6 +1112,8 @@ class Window(PageControls,QMainWindow):
         self.reload()
 
     def export(self,filename,rows,fields):
+        if not self.policy.allows('reports'):
+            QMessageBox.information(self,'Package permission','Reports are not included in this package.');return
         path,_=QFileDialog.getSaveFileName(self,'Export CSV',filename,'CSV (*.csv)')
         if path:
             try:
