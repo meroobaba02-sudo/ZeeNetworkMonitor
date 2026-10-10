@@ -188,3 +188,14 @@ def test_route_inspection_loopback_reports_evidence_not_wan_proof(monkeypatch):
     result=inspect_path('127.0.0.1','127.0.0.1')
     assert result['reply'] and result['source']=='127.0.0.1'
     assert 'not proof' in result['text'] and 'No UDP data was sent' in result['text']
+
+
+def test_peer_line_requires_both_fresh_endpoint_metrics():
+    from zee.network_paths import peer_quality
+    a=Device(id='a');b=Device(id='b');now=time.time()
+    good={'at':now,'metrics':{'signal_dbm':-58,'tx_ccq':98}}
+    assert peer_quality(a,b,{'a':good},now)[0]=='Unknown'
+    assert peer_quality(a,b,{'a':good,'b':good},now)[0]=='Good'
+    critical={'at':now,'metrics':{'wireless_up':0}}
+    assert peer_quality(a,b,{'a':good,'b':critical},now)[0]=='Critical'
+    assert peer_quality(a,b,{'a':good,'b':good},now+1000)[0]=='Unknown'

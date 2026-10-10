@@ -66,6 +66,17 @@ def prepare_probe(device,page,fn,require_verified=False,ambiguous=False):
     return lambda d:fn(snapshot)
 
 
+def peer_quality(first,second,latest,now):
+    from .telemetry import quality
+    labels=[]
+    for d in (first,second):
+        row=latest.get(d.id,{})
+        labels.append(quality(row.get('metrics',{}),d.integration,now-row.get('at',0))[1])
+    rank={'Good':0,'Fair':1,'Poor':2,'Critical':3}
+    combined='Unknown' if 'Unknown' in labels else max(labels,key=rank.get)
+    return combined,labels
+
+
 def inspect_path(target,source=''):
     ip=ipaddress.ip_address(target)
     if source and ipaddress.ip_address(source).version!=ip.version:raise ValueError('Source and target IP versions must match.')

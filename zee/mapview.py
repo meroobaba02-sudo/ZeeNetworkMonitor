@@ -96,14 +96,20 @@ class MapCanvas(QWidget):
             color=COLORS[state] if state in ('Warning','No reply') else ('#28e3a0' if states.get(link_id) in ('Online','Warning') and state=='Online' else '#607c8c')
             path=QPainterPath(a);path.cubicTo(QPointF(a.x(),(a.y()+b.y())/2),QPointF(b.x(),(a.y()+b.y())/2),b)
             if 'radio' in d.kind:color=self.radio_color(d,state).name()
+            peer_labels=None
+            if 'radio' in d.kind and d.peer_id and parent:
+                from .network_paths import peer_quality
+                label,peer_labels=peer_quality(d,parent,self.window.measurements.latest,time.time())
+                color={'Good':'#28e3a0','Fair':'#ffdd55','Poor':'#ff9933','Critical':'#ff6478','Unknown':'#9aacc0'}[label]
             pen=QPen(QColor(color),2.5)
-            if state in ('No reply','Warning'):pen.setStyle(Qt.DashLine)
+            if state in ('No reply','Warning') or states.get(link_id) in ('No reply','Warning'):pen.setStyle(Qt.DashLine)
             p.setPen(pen);p.drawPath(path)
             if 'radio' in d.kind:
                 r=self.window.measurements.latest.get(d.id,{})
                 fresh=time.time()-r.get('at',0)<=max(30,d.integration.get('poll_seconds',30)*3)
                 m=r.get('metrics',{}) if fresh else {}
                 text=f"{m.get('signal_dbm','—')} dBm • CCQ {m.get('tx_ccq','—')}% • TX/RX {m.get('tx_mbps','—')}/{m.get('rx_mbps','—')} Mbps"
+                if peer_labels:text='Endpoints: '+ ' / '.join(peer_labels)+' • '+text
                 p.setFont(QFont('Segoe UI',8));p.setPen(QColor('#acc7dd'));p.drawText((a+b)/2,text)
         self.boxes={};self.station_boxes={};self.dish_boxes={}
         for st in self.stations:

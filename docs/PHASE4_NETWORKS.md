@@ -10,7 +10,7 @@
 - Background-page faults reach the buzzer/notifications and persist protection from ordinary retention. Mobile shows actual all-network fresh results when all-network mode is selected; other pages remain Not monitored in selected mode.
 - Same target across pages is blocked in all-network mode if sources are missing/shared or any related page lacks operator verification. Distinct sources and operator attestation still do not establish WAN independence.
 - **Connect tower radios** saves reciprocal peer IDs, optionally sets the second radio's upstream parent, and rejects cross-page links, self-links, replacement of existing peers without removal and parent cycles. Both peer records update together. Remove clears that pair and its direct parent relation, preserving unrelated parent links.
-- Map peer links avoid drawing the same reciprocal pair twice and use the configured endpoint when displaying reachability color. Wireless quality remains separate from ICMP evidence.
+- Map peer links avoid drawing the same reciprocal pair twice. Radio-pair quality uses both fresh endpoints, takes the worse measured category, and remains Unknown if either is missing/stale. Reachability warnings at either endpoint make the line dashed; wireless quality remains separate from ICMP evidence.
 
 ## Simple user path (Roman Urdu)
 1. Network setup / paths kholen. Har row ka apna network naam den.
