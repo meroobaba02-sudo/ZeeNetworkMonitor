@@ -1,6 +1,6 @@
 # Zee Network Monitor
 
-Windows desktop network monitor for towers, radios, WAN links and camera services. Current customer GUI release: **0.4.13**, owner-evaluation preview.
+Windows desktop network monitor for towers, radios, WAN links and camera services. Current customer GUI release: **0.4.14**, owner-evaluation preview.
 
 Download the setup or portable package from a successful [Windows Actions run](https://github.com/meroobaba02-sudo/ZeeNetworkMonitor/actions). No Python is needed on the customer's laptop. Keep the entire portable folder together.
 
