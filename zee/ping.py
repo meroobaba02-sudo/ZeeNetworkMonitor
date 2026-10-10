@@ -42,6 +42,9 @@ def command(device, system=None):
 
 
 def probe(device):
+    if device.source and ':' not in device.source:
+        from .windows_ping import echo
+        return echo(device.host,device.source,device.timeout)
     try:
         run = subprocess.run(command(device),capture_output=True,text=True,errors='replace',timeout=device.timeout/1000+4,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         return parse_ping(run.stdout,run.returncode)

@@ -6,8 +6,8 @@ from pathlib import Path
 import sys
 import traceback
 from PySide6.QtCore import QTimer, QLockFile
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtGui import QIcon,QPixmap,QColor
+from PySide6.QtWidgets import QApplication, QMessageBox,QSplashScreen
 from zee.core import Store
 from zee.gui import Window, STYLE
 
@@ -37,11 +37,28 @@ def main():
             QMessageBox.critical(None,'Application error','An operation failed. See diagnostic.log in the data folder.\n'+str(value))
     sys.excepthook=error_hook
     try:
+        pending=base/'restore.pending.sqlite3'
+        if pending.exists():
+            import sqlite3
+            if (base/'monitor.sqlite3').exists():
+                old=sqlite3.connect(base/'monitor.sqlite3');backup=sqlite3.connect(base/'before-restore.bak')
+                old.backup(backup);backup.close();old.close()
+            source=sqlite3.connect(pending);dest=sqlite3.connect(base/'monitor.sqlite3');source.backup(dest);dest.close();source.close();pending.unlink()
+        pix=QPixmap(520,190);pix.fill(QColor('#081c2b'));splash=QSplashScreen(pix)
+        from PySide6.QtCore import Qt
+        splash.showMessage('Zee Network Monitor\nProfessional Edition\n\nCreated by Zeeshan Rasool',Qt.AlignCenter,QColor('#e1f0fa'));splash.show();app.processEvents()
         store=Store(base/'monitor.sqlite3')
         window=Window(store)
         assets=Path(getattr(sys,'_MEIPASS',Path(__file__).parent))/'assets'
         if (assets/'icon.png').exists():
             app.setWindowIcon(QIcon(str(assets/'icon.png')))
+        from zee.licensing import status
+        licence=status(base)
+        splash.finish(window)
+        if not licence['valid'] and not args.smoke_test:
+            from zee.system_dialogs import LicenseDialog
+            LicenseDialog(window).exec()
+            if not status(base)['valid']:window.close();return 3
         window.show()
         if args.smoke_test:
             def finish():

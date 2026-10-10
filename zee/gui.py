@@ -11,8 +11,9 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
     QFileDialog, QTextEdit, QSystemTrayIcon, QStyle, QScrollArea, QDateTimeEdit, QSplitter, QDoubleSpinBox)
 from .core import Device, Store, TYPES, VERSION, diagnoses, export_csv, outages
 from .engine import Engine
+from .page_controls import PageControls
 
-COLORS = {'Online':'#36d399','Warning':'#fbbf24','No reply':'#fb7185','Unknown':'#fbbf24','Checking':'#60a5fa','Disabled':'#94a3b8','Probe error':'#fbbf24','Unconfigured':'#fbbf24'}
+COLORS = {'Online':'#36d399','Warning':'#fbbf24','No reply':'#fb7185','Unknown':'#9aacc0','Checking':'#60a5fa','Disabled':'#94a3b8','Probe error':'#fbbf24','Unconfigured':'#9aacc0'}
 STYLE = '''
 QWidget { background:#071827; color:#e2e8f0; font-family:Segoe UI; font-size:12px; }
 QMainWindow, QDialog { background:#101827; }
@@ -55,7 +56,7 @@ class DeviceDialog(QDialog):
         body = QWidget()
         form = QFormLayout(body)
         values = asdict(self.original)
-        for key,title in [('name','Device / station name'),('host','IP address or hostname'),('location','Station / location'),('notes','Notes'),('source','Optional IPv6 source IP'),('profile','Reserved profile reference')]:
+        for key,title in [('name','Device / station name'),('host','IP address or hostname'),('location','Station / location'),('notes','Notes'),('source','Optional local source IP'),('profile','Profile reference'),('management_url','Management HTTP/HTTPS URL'),('service_url','Camera/service HTTP/HTTPS/RTSP URL'),('role','Radio role / local or remote')]:
             edit = QLineEdit(values[key])
             self.fields[key] = edit
             form.addRow(title,edit)
@@ -71,7 +72,7 @@ class DeviceDialog(QDialog):
         side=QComboBox();side.addItem('Left','Left');side.addItem('Right','Right')
         side.setCurrentIndex(max(0,side.findData(values['dish_side'])))
         self.fields['dish_side']=side;form.addRow('Dish side (both transmit / receive)',side)
-        for key,title in [('parent','Parent / previous hop'),('next_hop','Next hop (annotation)')]:
+        for key,title in [('parent','Parent / previous hop'),('next_hop','Next hop (annotation)'),('peer_id','Wireless peer radio')]:
             combo = QComboBox()
             combo.addItem('None','')
             for d in devices:
@@ -228,17 +229,25 @@ class Topology(QWidget):
         if not self.devices:
             p.drawText(self.rect(),Qt.AlignCenter,'Add devices and assign parent hops to draw the topology.')
 
-class Window(QMainWindow):
+class Window(PageControls,QMainWindow):
     def __init__(self,store):
         super().__init__()
         self.store=store
-        self.engine=Engine(self)
+        self.page_id=store.setting('active_page','default')
+        self.page_snapshot=self.current_page()
+        from .credentials import Vault
+        from .monitoring import Measurements
+        self.vault=Vault(store.path.parent/'credentials.dpapi.json')
+        self.measurements=Measurements(self,self.vault)
+        self.details_windows=[]
+        self.engine=Engine(self,probe_fn=self.scoped_probe)
         self.engine.result.connect(self.result)
         self.engine.busy_changed.connect(self.busy)
         self.states={}
         self.latest={}
         self.streaks={}
         self.alerted={}
+        self.telemetry_alerted={}
         self.requested=set()
         self.devices=[]
         self.setWindowTitle(f'Zee Network Monitor • {VERSION}')
@@ -250,10 +259,10 @@ class Window(QMainWindow):
         layout.setContentsMargins(22,18,22,18)
         head=QHBoxLayout()
         titles=QVBoxLayout()
-        title=QLabel('ZEE  /  NETWORK MONITOR')
+        title=QLabel('ZEE  /  NETWORK MONITOR PROFESSIONAL')
         title.setObjectName('title')
         title.setStyleSheet('font-size:20px; font-weight:700;')
-        subtitle=QLabel('Your network • Live device map • Windows desktop')
+        subtitle=QLabel('Selected network only • Live map • Professional preview')
         subtitle.setObjectName('subtitle')
         titles.addWidget(title)
         titles.addWidget(subtitle)
@@ -309,9 +318,10 @@ class Window(QMainWindow):
         self.table.setSelectionMode(QTableWidget.SingleSelection)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
+        self.table.setSortingEnabled(True)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.doubleClicked.connect(self.edit)
+        self.table.doubleClicked.connect(self.device_double_click)
         self.table.itemSelectionChanged.connect(self.selection_changed)
         dash.addWidget(self.table)
         note=QLabel('No reply ≠ confirmed physical failure. Loss/uptime are sampled ICMP estimates. WAN independence requires a verified probe path.')
@@ -326,8 +336,13 @@ class Window(QMainWindow):
         from .mapview import MapDashboard
         self.map_page=MapDashboard(self)
         self.tabs.insertTab(0,self.map_page,'Map')
+        from .professional import ProfessionalPanel
+        self.pro_panel=ProfessionalPanel(self);self.tabs.addTab(self.pro_panel,'WAN / Radio')
+        self.page_picker=QComboBox();self.page_picker.setMaximumWidth(160);self.page_picker.currentIndexChanged.connect(self.change_page)
+        self.navigation.addWidget(QLabel('NETWORK PAGE'));self.navigation.addWidget(self.page_picker)
+        self.navigation.addWidget(button('Manage networks',self.manage_pages))
         self.nav_buttons=[]
-        for i,text in enumerate(['◉  Map','▤  Devices / WANs','◷  History','⌁  Topology','♧  Alerts','⚙  Settings']):
+        for i,text in enumerate(['◉  Map','▤  Devices / WANs','◷  History','⌁  Topology','♧  Alerts','⚙  Settings','◈  WAN / Radio']):
             b=QPushButton(text);b.setObjectName('nav');b.setCheckable(True);b.setFixedWidth(148)
             b.clicked.connect(lambda checked=False,index=i:self.tabs.setCurrentIndex(index))
             self.navigation.addWidget(b);self.nav_buttons.append(b)
@@ -339,6 +354,7 @@ class Window(QMainWindow):
         if QSystemTrayIcon.isSystemTrayAvailable():
             self.tray.show()
         self.statusBar().showMessage('Ready • Monitoring is stopped')
+        self.statusBar().addPermanentWidget(QLabel('Created by Zeeshan Rasool'))
         self.queue_timer=QTimer(self)
         self.queue_timer.timeout.connect(self.drain)
         self.queue_timer.start(150)
@@ -351,6 +367,13 @@ class Window(QMainWindow):
         self.store.event('','application','Application started')
         self.reload()
         self.prune()
+        self.license_timer=QTimer(self);self.license_timer.timeout.connect(self.check_licence);self.license_timer.start(60000)
+
+    def check_licence(self):
+        from .licensing import status
+        if not status(self.store.path.parent)['valid']:
+            self.engine.stop();self.measurements.stop();self.requested.clear();self.buzzer.shutdown()
+            QMessageBox.warning(self,'Licence expired or invalid','Monitoring is stopped. Import a valid licence on next launch.');self.close()
 
     def history_page(self):
         page=QWidget()
@@ -441,14 +464,23 @@ class Window(QMainWindow):
         form.addRow(button('Test buzzer (1 second)',self.test_buzzer))
         form.addRow(button('Save settings',self.save_settings,True))
         form.addRow(button('Backup database',self.backup))
+        form.addRow(button('Restore backup and close',self.restore_database))
+        form.addRow(button('License / activation',self.license_dialog))
+        form.addRow(button('Mobile HTTPS dashboard',self.mobile_dialog))
         form.addRow(button('Add 5 unconfigured WAN templates',self.wan_templates))
-        info=QLabel('Database: '+str(self.store.path)+'\n\nAdvanced adapters: not implemented in v0.1.0.\nRocket M5 uses basic ping only. No SNMP/SSH/API secrets are stored.\nRemote agents, encrypted reporting and service installation are not available.\nNo fabricated signal, speed, CCQ, bandwidth or agent data is displayed.\n\nClosing the app stops local monitoring. Existing probes finish within their deadline.')
+        info=QLabel('Database: '+str(self.store.path)+'\nProfessional preview: selected network only. Configure verified adapters under WAN / Radio. Secrets use Windows DPAPI. See PROFESSIONAL_GUIDE for supported measurements, routing, licensing and mobile setup. Windows 10 hardware and real Rocket M5 firmware remain unverified.')
         info.setWordWrap(True)
         form.addRow(info)
         self.tabs.addTab(page,'Settings & scope')
 
     def reload(self):
-        self.devices=self.store.devices()
+        pages=[p for p in self.store.pages() if not p.archived]
+        if not any(p.id==self.page_id for p in pages):self.page_id=pages[0].id
+        self.page_snapshot=self.current_page()
+        self.page_picker.blockSignals(True);self.page_picker.clear()
+        for p in pages:self.page_picker.addItem(p.name,p.id)
+        self.page_picker.setCurrentIndex(self.page_picker.findData(self.page_id));self.page_picker.blockSignals(False)
+        self.devices=[d for d in self.store.devices() if d.page_id==self.page_id]
         self.engine.devices=self.devices
         self.requested &= {d.id for d in self.devices if d.enabled and d.host}
         current=self.station.currentText()
@@ -509,6 +541,9 @@ class Window(QMainWindow):
             if state=='Checking':state=self.states.get(d.id,'Unknown')
             if d.alerts and state in ('Warning','No reply') and self.alerted.get(d.id):
                 active[d.id]=self.alerted[d.id]
+        for d in self.devices:
+            r=self.measurements.latest.get(d.id,{})
+            if d.enabled and d.alerts and d.id in self.telemetry_alerted and time.time()-r.get('at',0)<max(30,d.integration.get('poll_seconds',30)*3):active[d.id]=self.telemetry_alerted[d.id]
         self.buzzer.update(active)
 
     def refresh_states(self):
@@ -516,6 +551,7 @@ class Window(QMainWindow):
         self.topology.refresh(self.devices,{d.id:self.state(d) for d in self.devices})
         self.render_diagnosis()
         self.refresh_map()
+        self.update_mobile()
 
     def state(self,d):
         if not d.enabled:
@@ -561,6 +597,7 @@ class Window(QMainWindow):
             return
         selected=self.selected()
         self.table.blockSignals(True)
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
         all_states=[]
         latencies=[]
@@ -591,6 +628,7 @@ class Window(QMainWindow):
                 self.table.setItem(row,col,item)
             if selected and selected.id==d.id:
                 self.table.selectRow(row)
+        self.table.setSortingEnabled(True)
         self.table.blockSignals(False)
         lookup={d.id:self.state(d) for d in self.devices}
         active_links=sum(1 for d in self.devices if d.parent and lookup.get(d.parent) in ('Online','Warning') and lookup[d.id] in ('Online','Warning'))
@@ -621,7 +659,8 @@ class Window(QMainWindow):
         self.outage_text.setPlainText('Observed no-reply intervals within selected window:\n'+'\n'.join(text) if text else 'No no-reply intervals observed in this window.')
 
     def event_rows(self,limit=1000):
-        return self.store.events(self.event_device.currentData() or '',self.event_from.dateTime().toSecsSinceEpoch(),self.event_to.dateTime().toSecsSinceEpoch(),self.event_search.text(),limit)
+        ids={d.id for d in self.devices}|{s.id for s in self.page_stations()}
+        return [r for r in self.store.events(self.event_device.currentData() or '',self.event_from.dateTime().toSecsSinceEpoch(),self.event_to.dateTime().toSecsSinceEpoch(),self.event_search.text(),limit) if r['device'] in ids]
 
     def render_events(self):
         if not hasattr(self,'event_table'):
@@ -642,7 +681,7 @@ class Window(QMainWindow):
             self.edit_device(d)
 
     def edit_device(self,d):
-        dialog=DeviceDialog(self.devices,d,self,stations=self.store.stations())
+        dialog=DeviceDialog(self.devices,d or Device(page_id=self.page_id),self,stations=self.page_stations())
         if dialog.exec()==QDialog.Accepted:
             try:
                 value=dialog.device()
@@ -658,12 +697,14 @@ class Window(QMainWindow):
     def delete(self):
         d=self.selected()
         if d and QMessageBox.question(self,'Delete device','Delete '+d.name+'? Its historical records will be retained.')==QMessageBox.Yes:
+            self.vault.delete(d.id)
             self.store.delete(d.id)
             self.reload()
 
     def toggle(self):
         if self.engine.running:
             self.engine.stop()
+            self.measurements.stop()
             self.requested.clear()
             self.buzzer.silence()
             self.start_button.setText('▶ Start monitoring')
@@ -671,6 +712,7 @@ class Window(QMainWindow):
         else:
             self.engine.devices=self.devices
             self.engine.start()
+            self.measurements.enabled=True
             self.start_button.setText('■ Stop monitoring')
             self.store.event('','application','Periodic monitoring started')
         self.render_all()
@@ -678,6 +720,7 @@ class Window(QMainWindow):
     def ping_all(self):
         self.requested.update(d.id for d in self.devices if d.enabled and d.host)
         self.drain()
+        for d in self.devices:self.measurements.submit(d)
 
     def ping_selected(self):
         d=self.selected()
@@ -729,6 +772,9 @@ class Window(QMainWindow):
         self.store.record(id,result,now)
         self.latest[id]={'at':now,'latency':result.latency,'success':result.success,'error':result.error}
         state='Warning' if result.success and result.latency is not None and result.latency>current.latency_threshold else ('Online' if result.success else 'No reply')
+        if result.success and current.integration.get('loss_warning_pct') is not None:
+            recent=self.store.samples(id,max(0,now-300))[-30:]
+            if len(recent)>=3 and 100*sum(not r['success'] for r in recent)/len(recent)>current.integration['loss_warning_pct']:state='Warning'
         self.states[id]=state
         self.streaks[id]=0 if result.success else self.streaks.get(id,0)+1
         if previous!=state:
@@ -737,7 +783,7 @@ class Window(QMainWindow):
             self.store.event(id,'ping_failure',result.error,now)
         elif state=='Warning' and previous!='Warning':
             self.store.event(id,'latency',f'High latency: {result.latency:.1f} ms',now)
-        alert='No reply' if self.streaks[id]>=current.failure_threshold else ('High latency' if state=='Warning' else '')
+        alert='No reply' if self.streaks[id]>=current.failure_threshold else ('Latency / packet loss warning' if state=='Warning' else '')
         prior_alert=self.alerted.get(id,'')
         if current.alerts and alert and prior_alert!=alert:
             self.alerted[id]=alert
@@ -780,7 +826,7 @@ class Window(QMainWindow):
         existing={d.wan for d in self.devices}
         for i in range(1,6):
             if i not in existing:
-                self.store.save(Device(name=f'WAN-{i}',kind=TYPES[0],location='',wan=i,enabled=False,notes='Configure a verified WAN-specific target/path. Reachability only until verified.'))
+                self.store.save(Device(page_id=self.page_id,name=f'WAN-{i}',kind=TYPES[0],location='',wan=i,enabled=False,notes='Configure a verified WAN-specific target/path. Reachability only until verified.'))
         self.reload()
 
     def export(self,filename,rows,fields):
@@ -808,6 +854,11 @@ class Window(QMainWindow):
         self.export('events.csv',self.event_rows(2147483647),['id','device','at','kind','message'])
 
     def closeEvent(self,event):
+        for dialog in self.details_windows:dialog.close()
+        self.pro_panel.timer.stop()
+        self.license_timer.stop()
+        self.measurements.shutdown()
+        if hasattr(self,'mobile_server') and self.mobile_server:self.mobile_server.stop()
         self.map_page.shutdown()
         self.buzzer.shutdown()
         self.queue_timer.stop()

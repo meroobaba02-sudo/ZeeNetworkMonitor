@@ -43,7 +43,7 @@ class MapCanvas(QWidget):
         outer=QVBoxLayout(self)
         outer.addLayout(self.controls)
         self.controls.addStretch()
-        for text,fn in [('+',lambda:self.set_zoom(self.zoom*1.2)),('−',lambda:self.set_zoom(self.zoom/1.2)),('Reset',self.reset)]:
+        for text,fn in [('+',lambda:self.set_zoom(self.zoom*1.2)),('−',lambda:self.set_zoom(self.zoom/1.2)),('Fit',self.fit),('Reset',self.reset)]:
             b=QPushButton(text);b.setFixedHeight(30);b.clicked.connect(fn);self.controls.addWidget(b)
         outer.addStretch()
         self.map_label=QLabel('Zhob–Sambaza • geographic grid • download roads for offline use')
@@ -56,6 +56,13 @@ class MapCanvas(QWidget):
 
     def reset(self):
         self.zoom=1.;self.offset=QPointF();self.update()
+
+    def fit(self):
+        positions=[auto_position(d,i) for i,d in enumerate(self.devices) if not d.station_id]
+        positions += [self.station_position(s,self.window.map_page.map_data['bbox'] if self.window.map_page.map_data else regionmap.BBOX) for s in self.stations]
+        if not positions:self.reset();return
+        xs,ys=zip(*positions);self.zoom=max(.6,min(2.8,.7/max(.25,max(xs)-min(xs),max(ys)-min(ys))))
+        self.offset=QPointF((.5-(min(xs)+max(xs))/2)*self.width()*self.zoom,(.5-(min(ys)+max(ys))/2)*self.height()*self.zoom);self.update()
 
     def point(self,x,y):
         return QPointF((x-.5)*self.width()*self.zoom+self.width()/2+self.offset.x(),(y-.5)*self.height()*self.zoom+self.height()/2+self.offset.y())
@@ -76,19 +83,27 @@ class MapCanvas(QWidget):
             for side in ('Left','Right'):
                 for i,d in enumerate(r for r in radios if r.dish_side==side):
                     center=station_points[st.id]
-                    points[d.id]=QPointF(center.x()+(-31 if side=='Left' else 31),center.y()-28+i*20)
+                    points[d.id]=QPointF(center.x()+(-31 if side=='Left' else 31),center.y()-20+min(i,3)*12)
         states={d.id:self.window.state(d) for d in self.devices}
         for d in self.devices:
-            if d.parent not in points or d.id not in points:continue
-            parent=next((a for a in self.devices if a.id==d.parent),None)
+            link_id=d.peer_id or d.parent
+            if link_id not in points or d.id not in points:continue
+            parent=next((a for a in self.devices if a.id==link_id),None)
             if d.station_id and parent and parent.station_id==d.station_id:continue
-            a,b=points[d.parent],points[d.id]
+            a,b=points[link_id],points[d.id]
             state=states[d.id]
             color=COLORS[state] if state in ('Warning','No reply') else ('#28e3a0' if states.get(d.parent) in ('Online','Warning') and state=='Online' else '#607c8c')
             path=QPainterPath(a);path.cubicTo(QPointF(a.x(),(a.y()+b.y())/2),QPointF(b.x(),(a.y()+b.y())/2),b)
+            if 'radio' in d.kind:color=self.radio_color(d,state).name()
             pen=QPen(QColor(color),2.5)
             if state in ('No reply','Warning'):pen.setStyle(Qt.DashLine)
             p.setPen(pen);p.drawPath(path)
+            if 'radio' in d.kind:
+                r=self.window.measurements.latest.get(d.id,{})
+                fresh=time.time()-r.get('at',0)<=max(30,d.integration.get('poll_seconds',30)*3)
+                m=r.get('metrics',{}) if fresh else {}
+                text=f"{m.get('signal_dbm','—')} dBm • CCQ {m.get('tx_ccq','—')}% • TX/RX {m.get('tx_mbps','—')}/{m.get('rx_mbps','—')} Mbps"
+                p.setFont(QFont('Segoe UI',8));p.setPen(QColor('#acc7dd'));p.drawText((a+b)/2,text)
         self.boxes={};self.station_boxes={};self.dish_boxes={}
         for st in self.stations:
             radios=[d for d in self.devices if d.station_id==st.id]
@@ -100,8 +115,8 @@ class MapCanvas(QWidget):
                 h=-25+k*18;half=(h+45)*20/77
                 p.drawLine(QPointF(x-half,y+h),QPointF(x+half,y+h))
                 p.drawLine(QPointF(x-half,y+h),QPointF(x+(h+63)*20/77,y+h+18))
-            for d in radios:
-                dp=points[d.id];color=QColor(COLORS[states[d.id]])
+            for d in radios[:8]:
+                dp=points[d.id];color=self.radio_color(d,states[d.id])
                 p.setPen(QPen(color,2));p.setBrush(QColor('#092a38'));p.drawLine(QPointF(x,dp.y()),dp);p.drawEllipse(dp,10,8)
                 if self.selected_id==d.id:p.drawEllipse(dp,14,12)
                 self.dish_boxes[d.id]=QRectF(dp.x()-14,dp.y()-12,28,24)
@@ -132,6 +147,19 @@ class MapCanvas(QWidget):
         if not self.devices and not self.stations:
             p.setPen(QColor('#d7e7ef'));p.setFont(QFont('Segoe UI',14,QFont.Bold))
             p.drawText(self.rect(),Qt.AlignCenter,'Add a tower, then attach its radios\nExisting devices: Edit → Physical tower')
+
+    def radio_color(self,d,ping_state):
+        from .telemetry import quality
+        result=self.window.measurements.latest.get(d.id,{})
+        score,label=quality(result.get('metrics',{}),d.integration,time.time()-result.get('at',0))
+        return QColor({'Good':'#28e3a0','Fair':'#ffdd55','Poor':'#ff9933','Critical':'#ff6478','Unknown':'#9aacc0'}[label])
+
+    def mouseDoubleClickEvent(self,event):
+        for id,box in {**self.boxes,**self.dish_boxes}.items():
+            if box.contains(event.position()):
+                d=next((d for d in self.devices if d.id==id),None)
+                if d:self.window.show_details(d);self.window.open_management(d)
+                return
 
     def station_position(self,st,bbox):
         if st.latitude is not None:return regionmap.position(st.latitude,st.longitude,bbox)
@@ -279,11 +307,14 @@ class MapDashboard(QWidget):
         self.tower_dialog(None)
 
     def edit_tower(self):
-        st=next((st for st in self.window.store.stations() if st.id==self.station_id),None)
+        st=next((st for st in self.window.page_stations() if st.id==self.station_id),None)
         if st:self.tower_dialog(st)
         else:QMessageBox.information(self,'Select tower','Click a physical tower first.')
 
     def tower_dialog(self,st):
+        if st is None:
+            from .core import Station
+            n=len(self.window.page_stations());st=Station(page_id=self.window.page_id,map_x=.5+.35*math.cos(n*2.399963),map_y=.5+.32*math.sin(n*2.399963))
         dialog=TowerDialog(self,st,self.map_data['bbox'] if self.map_data else regionmap.BBOX)
         if dialog.exec()==QDialog.Accepted:
             value=dialog.station();self.window.store.save_station(value);self.window.reload();self.select(value.id)
@@ -291,18 +322,16 @@ class MapDashboard(QWidget):
     def add_radio(self):
         if not self.station_id:
             QMessageBox.information(self,'Select tower','Add or select a physical tower first.');return
-        if sum(d.station_id==self.station_id for d in self.window.devices)>=4:
-            QMessageBox.information(self,'Tower full','This tower already has four radios/devices.');return
         from .gui import DeviceDialog
-        d=Device(kind='Rocket M5 / wireless radio',station_id=self.station_id,dish_side='Left' if sum(a.station_id==self.station_id for a in self.window.devices)%2==0 else 'Right')
-        dialog=DeviceDialog(self.window.devices,d,self,stations=self.window.store.stations())
+        d=Device(page_id=self.window.page_id,kind='Rocket M5 / wireless radio',station_id=self.station_id,dish_side='Left' if sum(a.station_id==self.station_id for a in self.window.devices)%2==0 else 'Right')
+        dialog=DeviceDialog(self.window.devices,d,self,stations=self.window.page_stations())
         if dialog.exec()==QDialog.Accepted:
             try:
                 d=dialog.device();self.window.store.save(d);self.window.reload();self.select(d.id)
             except ValueError as e:QMessageBox.warning(self,'Could not save radio',str(e))
 
     def map_options(self):
-        actions=['Download Zhob–Sambaza roads','Import saved map JSON','Export current map JSON','Set Overpass endpoint','Remove selected tower']
+        actions=['Download Zhob–Sambaza roads','Import saved map JSON','Export current map JSON','Set Overpass endpoint','Remove selected tower','Automatic tower layout']
         action,ok=QInputDialog.getItem(self,'Map options','Action',actions,0,False)
         if not ok:return
         if action==actions[0]:self.download_map()
@@ -325,6 +354,9 @@ class MapDashboard(QWidget):
                 url=urllib.parse.urlparse(endpoint)
                 if url.scheme!='https' or not url.hostname:QMessageBox.warning(self,'Invalid URL','Use an HTTPS interpreter URL.');return
                 self.window.store.set_setting('map_endpoint',endpoint)
+        elif action==actions[5]:
+            for i,st in enumerate(self.window.page_stations()):self.window.store.save_station(replace(st,map_x=.15+(i%4)*.22,map_y=.18+(i//4%4)*.20,latitude=None,longitude=None))
+            self.window.reload()
         elif self.station_id:
             if QMessageBox.question(self,'Remove tower','Remove tower? Radios and history will remain as standalone devices.')==QMessageBox.Yes:
                 self.window.store.delete_station(self.station_id);self.station_id='';self.window.reload();self.refresh()
@@ -354,7 +386,7 @@ class MapDashboard(QWidget):
         return next((d for d in self.window.devices if d.id==self.selected_id),None)
 
     def select(self,id):
-        station=next((st for st in self.window.store.stations() if st.id==id),None)
+        station=next((st for st in self.window.page_stations() if st.id==id),None)
         if station:
             self.station_id=id
             self.selected_id=next((d.id for d in self.window.devices if d.station_id==id),'')
@@ -364,7 +396,7 @@ class MapDashboard(QWidget):
         self.canvas.selected_id=self.selected_id or self.station_id;self.refresh()
 
     def move(self,id,x,y):
-        st=next((st for st in self.window.store.stations() if st.id==id),None)
+        st=next((st for st in self.window.page_stations() if st.id==id),None)
         if st:
             lat,lon=regionmap.coordinates(x,y,self.map_data['bbox'] if self.map_data else regionmap.BBOX)
             self.window.store.save_station(replace(st,map_x=x,map_y=y,latitude=lat,longitude=lon));self.window.reload();return
@@ -386,7 +418,7 @@ class MapDashboard(QWidget):
         if d:self.window.edit_device(d)
 
     def refresh(self):
-        w=self.window;self.canvas.devices=list(w.devices);self.canvas.stations=w.store.stations();self.canvas.update()
+        w=self.window;self.canvas.devices=list(w.devices);self.canvas.stations=w.page_stations();self.canvas.update()
         self.canvas.map_label.setText(('Zhob–Sambaza • offline roads map • '+regionmap.ATTRIBUTION) if self.map_data else 'Zhob–Sambaza • GPS grid only • Map options → Download roads')
         st=next((st for st in self.canvas.stations if st.id==self.station_id),None)
         self.radios.blockSignals(True);self.radios.clear()
@@ -413,7 +445,8 @@ class MapDashboard(QWidget):
             self.selected_id='';self.canvas.selected_id=self.station_id;self.name.setText('Select a device');self.type.setText('Click a marker to view its status');self.status.setText('Unknown');self.metrics.setText('Latency  —\nPacket loss  —');self.graph.rows=[];self.graph.update();self.info.setText('No device selected.')
         wan=[d for d in w.devices if d.wan or d.kind.startswith('WAN')]
         self.wans.setText('WAN connections • reachability only\n'+'\n'.join(d.name+'   '+w.state(d) for d in wan[:8]) if wan else 'WAN connections\nNo WAN devices configured')
-        rows=w.store.events(limit=3)
+        ids={d.id for d in w.devices}|{st.id for st in w.page_stations()}
+        rows=[r for r in w.store.events(limit=100) if r['device'] in ids][:3]
         self.events.setText('RECENT EVENTS\n'+'\n'.join(time.strftime('%H:%M:%S',time.localtime(r['at']))+'   '+r['message'] for r in rows))
 
 

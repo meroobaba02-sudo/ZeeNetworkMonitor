@@ -7,10 +7,11 @@ import re
 import sqlite3
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+from .workspaces import WorkspaceStore,NetworkPage
 from pathlib import Path
 
-VERSION = '0.3.0'
+VERSION = '0.4.0'
 TYPES = ['WAN / Internet', 'Rocket M5 / wireless radio', 'Router', 'Switch', 'CCTV / NVR / camera', 'Server / monitoring agent', 'Other']
 
 
@@ -52,10 +53,22 @@ class Device:
     profile: str = ''
     station_id: str = ''
     dish_side: str = 'Left'
+    page_id: str = 'default'
+    management_url: str = ''
+    service_url: str = ''
+    username: str = ''
+    role: str = ''
+    peer_id: str = ''
+    integration: dict = field(default_factory=dict)
     map_x: float | None = None
     map_y: float | None = None
 
     def validate(self):
+        from .connections import validate_url
+        for url,schemes in [(self.management_url,('http','https')),(self.service_url,('http','https','rtsp'))]:
+            if url:validate_url(url,schemes)
+        from .telemetry import validate_profile
+        validate_profile(self.integration)
         if self.dish_side not in ('Left', 'Right'):
             raise ValueError('Dish side must be Left or Right.')
         self.name = self.name.strip()
@@ -75,10 +88,10 @@ class Device:
         if self.map_x is not None and not (0 <= self.map_x <= 1 and 0 <= self.map_y <= 1):
             raise ValueError('Map position must be between 0 and 100 percent.')
         if self.source:
-            if ipaddress.ip_address(self.source).version != 6:
-                raise ValueError('Windows ping source binding supports IPv6 only. For IPv4 use verified OS routing or a future agent.')
-            if ':' not in self.host:
-                raise ValueError('Source-bound mode requires a literal IPv6 target.')
+            src=ipaddress.ip_address(self.source)
+            try:dst=ipaddress.ip_address(self.host)
+            except ValueError:raise ValueError('Source-bound monitoring requires a literal IP target.')
+            if src.version!=dst.version:raise ValueError('Source and destination IP families must match.')
         if not self.id:
             self.id = str(uuid.uuid4())
         if self.parent == self.id or self.next_hop == self.id:
@@ -87,6 +100,9 @@ class Device:
 
 @dataclass
 class Station:
+    page_id: str = 'default'
+    height: float = 0
+    notes: str = ''
     id: str = ''
     name: str = ''
     map_x: float = .5
@@ -108,23 +124,30 @@ class Station:
             self.id = str(uuid.uuid4())
 
 
-class Store:
+class Store(WorkspaceStore):
     """Owned by the GUI/main thread. Workers never touch this connection."""
     def __init__(self, path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(self.path)
         schema = self.db.execute('PRAGMA user_version').fetchone()[0]
-        if schema not in (0, 1, 2):
+        if schema not in (0, 1, 2, 3):
             self.db.close()
             raise ValueError('Unsupported database schema. Use the matching app version or restore a compatible backup.')
         if schema == 1:
             target = sqlite3.connect(str(self.path)+'.pre-v030.bak')
             try: self.db.backup(target)
             finally: target.close()
+        if schema == 2:
+            target=sqlite3.connect(str(self.path)+'.pre-v040.bak')
+            try:self.db.backup(target)
+            finally:target.close()
         self.db.row_factory = sqlite3.Row
         self.db.executescript('''
         PRAGMA journal_mode=WAL;
+        CREATE TABLE IF NOT EXISTS pages(id TEXT PRIMARY KEY,data TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS measurements(id INTEGER PRIMARY KEY,device TEXT,at REAL,data TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS measurement_device_time ON measurements(device,at);
         CREATE TABLE IF NOT EXISTS stations(id TEXT PRIMARY KEY, data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY, data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, data TEXT NOT NULL);
@@ -132,15 +155,18 @@ class Store:
         CREATE INDEX IF NOT EXISTS sample_device_time ON samples(device, at);
         CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, device TEXT, at REAL, kind TEXT, message TEXT);
         CREATE INDEX IF NOT EXISTS event_time ON events(at);
-        PRAGMA user_version=2;
+        PRAGMA user_version=3;
         ''')
         self.db.commit()
+
+        if not self.pages():self.save_page(NetworkPage())
 
     def stations(self):
         return [Station(**json.loads(r[0])) for r in self.db.execute('SELECT data FROM stations ORDER BY rowid')]
 
     def save_station(self, station):
         station.validate()
+        if station.page_id not in {p.id for p in self.pages()}:raise ValueError('Network no longer exists.')
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO stations VALUES(?,?)', (station.id,json.dumps(asdict(station))))
             self.event(station.id,'config','Tower saved: '+station.name)
@@ -159,15 +185,16 @@ class Store:
 
     def save(self, device):
         device.validate()
+        if device.page_id not in {p.id for p in self.pages()}:raise ValueError('Network no longer exists.')
+        if device.station_id and any(s.id==device.station_id and s.page_id!=device.page_id for s in self.stations()):raise ValueError('Tower belongs to a different network.')
         if device.station_id and device.station_id not in {s.id for s in self.stations()}:
             raise ValueError('Selected tower no longer exists.')
-        if device.station_id and sum(d.station_id == device.station_id and d.id != device.id for d in self.devices()) >= 4:
-            raise ValueError('A tower supports up to four radios/devices. Create another tower for more.')
         devices = {d.id: d for d in self.devices()}
         devices[device.id] = device
-        for ref in (device.parent, device.next_hop):
+        for ref in (device.parent, device.next_hop,device.peer_id):
             if ref and ref not in devices:
                 raise ValueError('Linked device no longer exists.')
+            if ref and devices[ref].page_id!=device.page_id:raise ValueError('Links must stay within one network page.')
         seen = {device.id}
         cursor = device.parent
         while cursor:
@@ -183,7 +210,8 @@ class Store:
         with self.db:
             self.db.execute('DELETE FROM devices WHERE id=?', (id,))
             for d in self.devices():
-                if d.parent == id or d.next_hop == id:
+                if d.parent == id or d.next_hop == id or d.peer_id == id:
+                    d.peer_id = '' if d.peer_id == id else d.peer_id
                     d.parent = '' if d.parent == id else d.parent
                     d.next_hop = '' if d.next_hop == id else d.next_hop
                     self.db.execute('UPDATE devices SET data=? WHERE id=?', (json.dumps(asdict(d)), d.id))
@@ -218,7 +246,7 @@ class Store:
     def prune(self, days):
         cutoff = time.time()-days*86400
         with self.db:
-            for table in ('events','samples'):
+            for table in ('events','samples','measurements'):
                 self.db.execute(f'DELETE FROM {table} WHERE at<?', (cutoff,))
         self.db.execute('PRAGMA incremental_vacuum')
 

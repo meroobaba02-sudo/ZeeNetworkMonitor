@@ -32,6 +32,7 @@ class Engine(QObject):
         self.pending = {}
         self.due = {}
         self.devices = []
+        self.generation = 0
         self.running = False
         self.closing = False
         self.timer = QTimer(self)
@@ -43,6 +44,7 @@ class Engine(QObject):
         if self.closing or not d.enabled or not d.host or d.id in self.pending or len(self.pending)>=8:
             return False
         worker = Worker(d,self.probe_fn)
+        worker.generation=self.generation
         worker.signals.done.connect(self.complete)
         self.pending[d.id] = worker
         self.due[d.id] = time.monotonic()+d.interval
@@ -52,8 +54,8 @@ class Engine(QObject):
 
     @Slot(str,object,object)
     def complete(self,id,device,result):
-        self.pending.pop(id,None)
-        if not self.closing:
+        worker=self.pending.pop(id,None)
+        if not self.closing and worker and worker.generation==self.generation:
             self.result.emit(id,device,result)
         self.busy_changed.emit()
 
@@ -67,6 +69,10 @@ class Engine(QObject):
         self.running = True
         self.due.clear()
         self.tick()
+
+    def invalidate(self):
+        self.generation+=1
+        self.stop()
 
     def stop(self):
         self.running = False

@@ -1,0 +1,179 @@
+"""Network pages, secure integration setup, live detail/alignment and WAN views."""
+import json,time,uuid,math
+from dataclasses import asdict,replace
+from pathlib import Path
+from PySide6.QtCore import Qt,QTimer,QUrl,QPointF
+from PySide6.QtGui import QDesktopServices,QPainter,QColor,QPen
+from PySide6.QtWidgets import (QWidget,QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QLabel,QLineEdit,QCheckBox,QComboBox,QPushButton,QDialogButtonBox,QMessageBox,QFileDialog,QInputDialog,QTextEdit,QTableWidget,QTableWidgetItem,QApplication,QDoubleSpinBox)
+from .workspaces import NetworkPage
+from .connections import management_url,validate_url
+from .telemetry import DEFAULT_PROFILE,quality,validate_profile
+
+class PageDialog(QDialog):
+    def __init__(self,parent,page):
+        super().__init__(parent);self.page=page;self.setWindowTitle('Network page and routing');self.resize(560,410)
+        layout=QVBoxLayout(self);form=QFormLayout();layout.addLayout(form);self.fields={}
+        for key,title in [('name','Network name'),('source_ip','Optional local source IP'),('interface_hint','Network adapter name (reference)'),('gateway_hint','Gateway (reference)'),('notes','Routing / cable notes')]:
+            edit=QLineEdit(str(getattr(page,key)));self.fields[key]=edit;form.addRow(title,edit)
+        self.verified=QCheckBox('I verified the Windows route/interface for this network');self.verified.setChecked(page.routing_verified);form.addRow(self.verified)
+        label=QLabel('Only the selected page is monitored. Changing pages stops checks. Source IP binds supported ICMP/HTTP probes; adapter/gateway names are notes, not route changes. Overlapping destinations require verified OS/VPN routing. No routes are installed automatically.');label.setWordWrap(True);layout.addWidget(label)
+        buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);layout.addWidget(buttons)
+    def value(self):
+        p=replace(self.page,**{k:w.text().strip() for k,w in self.fields.items()},routing_verified=self.verified.isChecked());p.validate();return p
+    def accept(self):
+        try:self.value()
+        except ValueError as e:QMessageBox.warning(self,'Invalid network',str(e));return
+        super().accept()
+
+class IntegrationDialog(QDialog):
+    def __init__(self,window,d):
+        super().__init__(window);self.window=window;self.d=d;self.setWindowTitle('Secure access / telemetry / WAN');self.resize(700,670)
+        layout=QVBoxLayout(self);form=QFormLayout();layout.addLayout(form)
+        self.username=QLineEdit(d.username);form.addRow('Username',self.username)
+        self.password=QLineEdit();self.password.setEchoMode(QLineEdit.Password);self.password.setPlaceholderText('Blank keeps existing password');form.addRow('Password (Windows protected)',self.password)
+        self.community=QLineEdit();self.community.setEchoMode(QLineEdit.Password);self.community.setPlaceholderText('Blank keeps existing read-only community');form.addRow('SNMP community (Windows protected)',self.community)
+        self.remove=QCheckBox('Delete all saved credentials for this device');form.addRow(self.remove)
+        text=QLabel('No automatic browser login. SNMPv2c community travels unencrypted: enable only on a trusted management network. HTTPS JSON uses validated TLS and sends credentials only to the configured device host. Never enter secrets in the JSON below.');text.setWordWrap(True);layout.addWidget(text)
+        self.profile=QTextEdit();self.profile.setPlainText(json.dumps(DEFAULT_PROFILE|d.integration,indent=2));layout.addWidget(self.profile)
+        helptext=QLabel('Adapter method: none / snmp / https-json. oids or fields: {"signal_dbm": {"path": "verified numeric OID or JSON/key", "scale": 1}}. Verify model/firmware before setting firmware_verified. WAN checks need wan_verified, HTTPS internet_url and internet_marker. Speed tests are OFF by default. See PROFESSIONAL_GUIDE.');helptext.setWordWrap(True);layout.addWidget(helptext)
+        box=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);box.accepted.connect(self.accept);box.rejected.connect(self.reject);layout.addWidget(box)
+    def accept(self):
+        try:
+            profile=json.loads(self.profile.toPlainText());validate_profile(profile)
+            d=replace(self.d,username=self.username.text().strip(),integration=profile);d.validate()
+            if self.remove.isChecked():self.window.vault.delete(d.id)
+            elif self.password.text() or self.community.text():
+                secrets=self.window.vault.get(d.id)
+                if self.password.text():secrets['password']=self.password.text()
+                if self.community.text():secrets['community']=self.community.text()
+                self.window.vault.set(d.id,secrets)
+            self.window.store.save(d);self.window.reload()
+        except (ValueError,RuntimeError,OSError) as e:QMessageBox.warning(self,'Could not save',str(e));return
+        super().accept()
+
+class MetricGraph(QWidget):
+    def __init__(self):super().__init__();self.values=[];self.setMinimumHeight(110)
+    def paintEvent(self,event):
+        p=QPainter(self);p.fillRect(self.rect(),QColor('#0b2034'));p.setPen(QColor('#8facbf'))
+        if not self.values:p.drawText(self.rect(),Qt.AlignCenter,'No measured history');return
+        vals=[v for v in self.values if v is not None]
+        if not vals:return
+        lo,hi=min(vals),max(vals);hi=max(hi,lo+1);prev=None;p.setPen(QPen(QColor('#28e3a0'),2))
+        for i,v in enumerate(self.values):
+            if v is None:prev=None;continue
+            pt=QPointF(15+i*(self.width()-30)/max(1,len(self.values)-1),self.height()-20-(v-lo)/(hi-lo)*(self.height()-40))
+            if prev:p.drawLine(prev,pt)
+            p.drawEllipse(pt,2,2);prev=pt
+        p.setPen(QColor('#d1e3ef'));p.drawText(10,14,f'{lo:.1f} … {max(vals):.1f}')
+
+def distance_bearing(a,b):
+    if not a or not b or a.latitude is None or b.latitude is None:return None
+    lat1,lat2=map(math.radians,(a.latitude,b.latitude));dl=math.radians(b.longitude-a.longitude)
+    h=math.sin((lat2-lat1)/2)**2+math.cos(lat1)*math.cos(lat2)*math.sin(dl/2)**2
+    distance=6371*2*math.asin(min(1,math.sqrt(h)))
+    bearing=(math.degrees(math.atan2(math.sin(dl)*math.cos(lat2),math.cos(lat1)*math.sin(lat2)-math.sin(lat1)*math.cos(lat2)*math.cos(dl)))+360)%360
+    return distance,bearing
+
+class DeviceDetails(QDialog):
+    def __init__(self,w,d):
+        super().__init__(w);self.w=w;self.id=d.id;self.previous=None;self.setWindowTitle('Device details / dish alignment');self.resize(700,660)
+        layout=QVBoxLayout(self);self.text=QLabel();self.text.setWordWrap(True);self.text.setTextFormat(Qt.PlainText);layout.addWidget(self.text)
+        self.graph=MetricGraph();layout.addWidget(self.graph)
+        self.events=QTextEdit();self.events.setReadOnly(True);self.events.setMaximumHeight(120);layout.addWidget(self.events)
+        self.feedback=QCheckBox('Alignment sound when measured quality improves (technician adjusts dish)');layout.addWidget(self.feedback)
+        row=QHBoxLayout();layout.addLayout(row)
+        for title,fn in [('Open management',self.open),('Refresh / Test connection',self.refresh_now),('Secure settings',self.settings),('Open stream',self.stream)]:
+            b=QPushButton(title);b.clicked.connect(fn);row.addWidget(b)
+        self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(1500);self.refresh()
+    def device(self):return next((d for d in self.w.devices if d.id==self.id),None)
+    def open(self):
+        d=self.device()
+        if d:self.w.open_management(d)
+    def stream(self):
+        d=self.device()
+        if d and d.service_url:
+            validate_url(d.service_url,('http','https','rtsp'))
+            if not QDesktopServices.openUrl(QUrl(d.service_url)):QMessageBox.warning(self,'Player unavailable','Install/register a compatible external RTSP player, or open the camera web page.')
+    def refresh_now(self):
+        d=self.device()
+        if d:self.w.requested.add(d.id);self.w.drain();self.w.measurements.submit(d)
+    def settings(self):
+        d=self.device()
+        if d:IntegrationDialog(self.w,d).exec()
+    def refresh(self):
+        d=self.device()
+        if not d:self.close();return
+        r=self.w.measurements.latest.get(d.id,{});m=r.get('metrics',{});age=time.time()-r.get('at',0)
+        score,label=quality(m,d.integration,age)
+        peer=next((a for a in self.w.devices if a.id==d.peer_id or a.id==d.parent),None)
+        a=next((s for s in self.w.store.stations() if s.id==d.station_id),None);b=next((s for s in self.w.store.stations() if peer and s.id==peer.station_id),None);geo=distance_bearing(a,b)
+        lines=[d.name+' • '+d.host,'Ping: '+self.w.state(d),'Wireless quality: '+label+(f' ({score}/10)' if score is not None else ''),'Peer: '+(peer.name if peer else 'Not assigned'),'Service: '+r.get('service','Not configured'),'Internet: '+r.get('internet','Not configured')]
+        lines+=['Last collection: '+(time.strftime('%H:%M:%S',time.localtime(r['at'])) if r else 'Never')+(' • STALE' if r and age>max(30,d.integration.get('poll_seconds',30)*3) else '')]
+        lines+=[f'{k}: {m.get(k,"Unavailable")}' for k in ['signal_dbm','noise_dbm','snr_db','tx_ccq','rx_ccq','tx_mbps','rx_mbps','frequency_mhz','channel_width_mhz','uptime_s','ethernet_up','wireless_up','cpu_pct','memory_pct']]
+        if geo:lines.append(f'Distance {geo[0]:.2f} km • initial bearing {geo[1]:.1f}° • elevation guidance unavailable')
+        rows=self.w.store.measurements(d.id,time.time()-86400,1000);scores=[quality(x.get('metrics',{}),d.integration)[0] for x in rows if 'metrics' in x]
+        self.graph.values=scores;self.graph.update();valid=[x for x in scores if x is not None]
+        if valid:lines.append(f'Best recent quality: {max(valid):.1f}/10')
+        if self.feedback.isChecked() and score is not None and self.previous is not None and score>self.previous:QApplication.beep()
+        if score is not None:self.previous=score
+        lines.append(r.get('telemetry_error',r.get('method','No telemetry collected')));self.text.setText('\n'.join(lines))
+        self.events.setPlainText('\n'.join(x['message'] for x in self.w.store.events(d.id,limit=5)))
+    def closeEvent(self,event):self.timer.stop();event.accept()
+
+class ProfessionalPanel(QWidget):
+    def __init__(self,w):
+        super().__init__();self.w=w;layout=QVBoxLayout(self)
+        title=QLabel('WAN / SERVICES / WIRELESS');layout.addWidget(title)
+        self.ranking=QLabel('No independently measured download tests yet');self.ranking.setWordWrap(True);layout.addWidget(self.ranking)
+        self.session_started=time.time()
+        self.table=QTableWidget(0,7);self.table.setHorizontalHeaderLabels(['Device','Ping','Internet / service','Download Mbps','Upload Mbps','Method / freshness','Wireless quality']);self.table.setSelectionBehavior(QTableWidget.SelectRows);self.table.setEditTriggers(QTableWidget.NoEditTriggers);layout.addWidget(self.table)
+        self.summary=QLabel();self.summary.setWordWrap(True);layout.addWidget(self.summary)
+        self.graph=MetricGraph();layout.addWidget(self.graph)
+        row=QHBoxLayout();layout.addLayout(row)
+        for title,fn in [('Device details',self.details),('Configure adapter',self.configure),('Refresh measurements',self.poll),('Test Speed Now',self.speed)]:
+            b=QPushButton(title);b.clicked.connect(fn);row.addWidget(b)
+        self.table.itemSelectionChanged.connect(self.history)
+        self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(2000)
+    def device(self):
+        i=self.table.item(self.table.currentRow(),0)
+        return next((d for d in self.w.devices if i and d.id==i.data(Qt.UserRole)),None)
+    def details(self):
+        d=self.device()
+        if d:self.w.show_details(d)
+    def configure(self):
+        d=self.device()
+        if d:IntegrationDialog(self.w,d).exec()
+    def poll(self):
+        d=self.device()
+        if d:self.w.measurements.submit(d)
+    def speed(self):
+        d=self.device()
+        if d:
+            try:
+                if not self.w.measurements.submit(d,True):QMessageBox.information(self,'Busy','Configure/enable the device or wait for running measurements.')
+            except ValueError as e:QMessageBox.warning(self,'Cannot measure this WAN',str(e))
+    def history(self):
+        d=self.device()
+        if not d:return
+        rows=self.w.store.measurements(d.id,time.time()-86400);values=[x.get('download_mbps') for x in rows];self.graph.values=values;self.graph.update();valid=[v for v in values if v is not None]
+        self.summary.setText(('Last 24h measured download: min %.2f / average %.2f / max %.2f Mbps'%(min(valid),sum(valid)/len(valid),max(valid))) if valid else 'Speed unavailable. Configure a verified WAN method. Traffic rate measures usage, not available Internet capacity.')
+    def refresh(self):
+        selected=self.device();self.table.blockSignals(True);self.table.setRowCount(0);rank=[]
+        for d in self.w.devices:
+            r=self.w.measurements.latest.get(d.id,{});speed=self.w.measurements.speed_latest.get(d.id,{})
+            stale=time.time()-r.get('at',0)>max(30,d.integration.get('poll_seconds',30)*3)
+            rate=speed if speed and time.time()-speed.get('at',0)<max(60,d.integration.get('speed_interval',900)) else r
+            rate_stale=time.time()-rate.get('at',0)>max(60,d.integration.get('speed_interval',900) if rate is speed else d.integration.get('poll_seconds',30)*3)
+            score,label=quality(r.get('metrics',{}),d.integration,time.time()-r.get('at',0))
+            if rate is speed and not rate_stale and 'download_mbps' in rate:rank.append((rate['download_mbps'],d.name))
+            vals=[d.name,self.w.state(d),'Unknown / stale' if stale else r.get('internet',r.get('service','Unknown')),str(round(rate['download_mbps'],2)) if 'download_mbps' in rate and not rate_stale else 'Unavailable',str(round(rate['upload_mbps'],2)) if 'upload_mbps' in rate and not rate_stale else 'Unavailable',rate.get('rate_kind','Not independently measurable'),label]
+            row=self.table.rowCount();self.table.insertRow(row)
+            for c,v in enumerate(vals):
+                item=QTableWidgetItem(v)
+                if c==0:item.setData(Qt.UserRole,d.id)
+                self.table.setItem(row,c,item)
+            if selected and selected.id==d.id:self.table.selectRow(row)
+        if rank:
+            rank.sort();self.ranking.setText(f'Latest measured downloads: fastest {rank[-1][1]} {rank[-1][0]:.2f} Mbps • slowest {rank[0][1]} {rank[0][0]:.2f} Mbps. Compare only equivalent test sizes/rate limits; these tests ran at different times.')
+        else:self.ranking.setText('No fresh independently measured download tests; router traffic is not ranked as Internet capacity.')
+        self.table.resizeColumnsToContents();self.table.blockSignals(False);self.history()
