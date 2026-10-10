@@ -1103,9 +1103,10 @@ class Window(PageControls,QMainWindow):
     def wan_templates(self):
         if not self.policy.allows('wan'):
             QMessageBox.information(self,'Package permission','WAN monitoring is not included in this package.');return
-        if len(self.store.devices())+7>self.policy.max_devices:
-            QMessageBox.information(self,'Device limit','Seven templates would exceed your package limit. Add individual modems instead.');return
         existing={d.wan for d in self.devices}
+        missing=sum(i not in existing for i in range(1,6))
+        if len(self.store.devices())+missing>self.policy.max_devices:
+            QMessageBox.information(self,'Device limit','These templates would exceed your package limit. Add individual modems instead.');return
         for i in range(1,6):
             if i not in existing:
                 self.store.save(Device(page_id=self.page_id,name=f'WAN-{i}',kind=TYPES[0],location='',wan=i,enabled=False,notes='Configure a verified WAN-specific target/path. Reachability only until verified.'))
