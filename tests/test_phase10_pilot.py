@@ -140,3 +140,15 @@ def test_capture_heartbeat_and_monitored_time_ignore_stopped_engine(tmp_path,mon
         assert capture.session.document['capture']['max_heartbeat_gap_ms']==10000 and capture.session.document['capture']['monitoring_s']==pytest.approx(1.049,abs=1e-7)
         capture.stop()
     finally:w.close();s.close()
+
+@pytest.mark.parametrize('name',['pilot-evidence.json','monitor.sqlite3','credentials.dpapi.json','license.json','pilot-archive-fixture.json','mobile/paired-devices.json'])
+def test_export_cannot_replace_live_data_or_pilot_archives(tmp_path,name):
+    session=PilotSession(tmp_path);session.save();target=tmp_path/name;target.parent.mkdir(parents=True,exist_ok=True)
+    if name!='pilot-evidence.json':target.write_bytes(b'preserve this application file')
+    before=target.read_bytes()
+    with pytest.raises(ValueError):session.export(target)
+    assert target.read_bytes()==before
+
+def test_safe_report_export_keeps_internal_evidence_and_notes(tmp_path):
+    session=PilotSession(tmp_path);session.record('install',status='Blocked',note='Private operator note');before=session.path.read_bytes();out=tmp_path/'zee-pilot-report.json';session.export(out)
+    assert session.path.read_bytes()==before and 'Private operator note' not in out.read_text()

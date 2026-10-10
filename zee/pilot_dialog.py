@@ -86,5 +86,5 @@ class PilotDialog(QDialog):
         self.guarded(self.session.reset);self.load()
     def export(self):
         path,_=QFileDialog.getSaveFileName(self,'Export report without credentials','zee-pilot-report.json','JSON (*.json)')
-        if path:self.guarded(lambda:atomic_json(__import__('pathlib').Path(path),self.session.report(self.include_notes.isChecked())))
+        if path:self.guarded(lambda:self.session.export(path,self.include_notes.isChecked()))
     def closeEvent(self,event):self.timer.stop();event.accept()

@@ -129,6 +129,14 @@ class PilotSession:
         if doc['version']!=VERSION:blockers.append('Evidence belongs to another app version; start a new session for this release')
         return {'ready_for_owner_review':not blockers,'commercial_release_approved':False,'blockers':blockers,
             'basis':'Operator-reported scenarios plus local measured capture. Owner evidence review and critical-issue resolution are still required.'}
+    def export(self,path,include_notes=False):
+        target=Path(path);resolved=target.resolve();base=self.path.parent.resolve()
+        protected={'pilot-evidence.json','monitor.sqlite3','monitor.sqlite3-wal','monitor.sqlite3-shm','credentials.dpapi.json','license.json','license.previous.json','studio.sqlite3','issuer-private.dpapi'}
+        if resolved==self.path.resolve() or (resolved.parent==base and (resolved.name in protected or resolved.name.startswith('pilot-archive-'))):
+            raise ValueError('Choose a different report file. Application data and pilot archives must be preserved.')
+        if resolved.is_relative_to(base/'mobile'):
+            raise ValueError('Save the report outside the private mobile-data folder.')
+        atomic_json(target,self.report(include_notes))
     def report(self,include_notes=False):
         report=copy.deepcopy(self.document)
         if not include_notes:
