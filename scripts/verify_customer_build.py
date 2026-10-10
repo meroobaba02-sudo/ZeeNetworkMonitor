@@ -1,5 +1,5 @@
 """CI-only disposable signing fixture; never publishes fixture customer packages or keys."""
-import base64,json,os,subprocess,sys,tempfile,uuid,zipfile
+import base64,json,os,subprocess,sys,tempfile,uuid,zipfile,shutil
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -7,7 +7,10 @@ from admin.customer_build import run,verify_report
 from admin.issuer import issue_document
 from zee.licensing import canonical,fingerprint
 from zee.build_profile import digest
-from zee.core import VERSION
+from zee.core import VERSION,Store,Device
+from zee.recovery import restore_pending
+from zee.licensing import import_licence
+from scripts.windows_install_acceptance import install,shortcuts,uninstall,execute
 
 root=Path(__file__).resolve().parents[1]
 with tempfile.TemporaryDirectory(prefix='zee-ci-customer-') as temp:
@@ -26,10 +29,45 @@ with tempfile.TemporaryDirectory(prefix='zee-ci-customer-') as temp:
         def launch(path):return subprocess.run([str(runtime/'ZeeNetworkMonitor.exe'),'--smoke-test','--data-dir',str(path)],timeout=60,env=env).returncode
         assert launch(data)==0
         state=json.loads((data/'customer-build-smoke.json').read_text());assert state['licence']['valid'] and state['require_issuer'] and state['device_limit']==2 and state['features']==['map','monitoring'] and state['profile_digest']==digest(profile) and state['title'].startswith(payload['branding']['app_name'])
+        # Exercise the actual customer-specific Inno package in the default per-profile folders.
+        setup=out/next(a['name'] for a in result['artifacts'] if a['kind']=='installer')
+        installed=Path(os.environ['LOCALAPPDATA'])/'Programs'/('ZeeCustomer-'+payload['profile_id'])
+        installed_data=Path(os.environ['LOCALAPPDATA'])/('ZeeCustomer-'+payload['profile_id'])
+        try:
+            install(setup);shortcuts(payload['branding']['app_name'])
+            execute(installed/'ZeeNetworkMonitor.exe','--smoke-test')
+            inactive=json.loads((installed_data/'customer-build-smoke.json').read_text());assert not inactive['licence']['valid'] and inactive['require_issuer']
+            # The same import service used by the desktop activation dialog; issuer paths scoped to fixture only.
+            from zee import licensing
+            old_path=licensing.public_key_path;old_digest=licensing.EXPECTED_PROFILE_SHA256;old_required=licensing.REQUIRE_ISSUER
+            licensing.public_key_path=lambda:installed/'_internal/assets/issuer-public.json';licensing.EXPECTED_PROFILE_SHA256=digest(profile);licensing.REQUIRE_ISSUER=True
+            incoming=folder/'signed-activation.json';incoming.write_text(json.dumps(licence))
+            try:import_licence(installed_data,incoming)
+            finally:licensing.public_key_path=old_path;licensing.EXPECTED_PROFILE_SHA256=old_digest;licensing.REQUIRE_ISSUER=old_required
+            execute(installed/'ZeeNetworkMonitor.exe','--smoke-test')
+            activated=json.loads((installed_data/'customer-build-smoke.json').read_text());assert activated['licence']['valid'] and activated['device_limit']==2
+            store=Store(installed_data/'monitor.sqlite3');store.save(Device(name='Preserve during reinstall',host='127.0.0.1'));store.backup(installed_data/'accepted-backup.sqlite3');store.close()
+            from zee.credentials import Vault
+            vault_path=installed_data/'credentials.bin';vault=Vault(vault_path);vault.set('ci-only',{'password':'CI disposable credential'})
+            license_before=(installed_data/'license.json').read_bytes();vault_before=vault_path.read_bytes()
+            install(setup);execute(installed/'ZeeNetworkMonitor.exe','--smoke-test')
+            assert (installed_data/'license.json').read_bytes()==license_before and vault_path.read_bytes()==vault_before
+            assert Vault(vault_path).get('ci-only')['password']=='CI disposable credential'
+            store=Store(installed_data/'monitor.sqlite3');assert store.devices()[0].name=='Preserve during reinstall';store.save(Device(name='Changed after backup',host='127.0.0.2'));store.close()
+            shutil.copyfile(installed_data/'accepted-backup.sqlite3',installed_data/'restore.pending.sqlite3')
+            execute(installed/'ZeeNetworkMonitor.exe','--smoke-test')
+            store=Store(installed_data/'monitor.sqlite3');assert len(store.devices())==1;store.close()
+            store=Store(installed_data/'before-restore.bak');assert len(store.devices())==2;store.close()
+            assert (installed_data/'license.json').read_bytes()==license_before and vault_path.read_bytes()==vault_before
+            uninstall(installed);assert not (installed/'ZeeNetworkMonitor.exe').exists()
+            assert (installed_data/'monitor.sqlite3').is_file() and (installed_data/'license.json').read_bytes()==license_before and vault_path.read_bytes()==vault_before
+        finally:
+            if (installed/'unins000.exe').exists():uninstall(installed)
+            shutil.rmtree(installed_data,ignore_errors=True)
         # Resource deletion cannot switch a compiled customer build back to owner evaluation.
         asset=runtime/'_internal/assets/customer-profile.json';raw=asset.read_bytes();asset.unlink();assert launch(folder/'missing-profile')!=0;asset.write_bytes(raw)
         asset=runtime/'_internal/assets/issuer-public.json';asset.unlink();assert launch(folder/'missing-issuer')!=0
-        (root/'release/CUSTOMER_BUILD_TEST_REPORT.txt').write_text('Disposable owner build: signed profile, full regression suite, portable + customer installer, frozen activation/branding/permissions, deleted profile/issuer fail-closed, and artifact hashes passed. Fixture private key was held in memory only; no fixture package is released. Physical Windows 10/hardware and customer-specific installer upgrade are untested.\n',encoding='utf-8')
+        (root/'release/CUSTOMER_BUILD_TEST_REPORT.txt').write_text('Disposable owner build: signed profile, full regression suite, portable + customer installer, frozen activation/branding/permissions, deleted profile/issuer fail-closed, and artifact hashes passed. Fixture private key was held in memory only; no fixture package is released. Native customer install/shortcuts, activation import, same-version reinstall preserving configuration/DPAPI credentials/licence, queued recovery with safety backup, uninstall preserving user data passed on Windows Server 2022. Physical Windows 10/11, phone/VPN/hardware and cross-release binary upgrade are untested.\n',encoding='utf-8')
     except Exception:
         if (out/'build.log').exists():(root/'release/CUSTOMER_BUILD_FAILURE.log').write_bytes((out/'build.log').read_bytes())
         raise

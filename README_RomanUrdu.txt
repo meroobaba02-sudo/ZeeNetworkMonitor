@@ -1,4 +1,4 @@
-ZEE NETWORK MONITOR PROFESSIONAL v0.4.14
+ZEE NETWORK MONITOR PROFESSIONAL v0.4.15
 
 WINDOWS PAR CHALANA
 Successful GitHub Actions run se Setup ya Portable artifact download karen.
@@ -48,7 +48,7 @@ Security/audit, pinned aur unresolved alerts ordinary cleanup se protected hain.
 Disk threshold warning hai; fresh records zabardasti delete nahi hote.
 
 ADMIN AUR TEST STATUS
-ZeeLicenseManager owner-only limited utility hai; full Admin Studio Phase 8 mein ayega.
+ZeeLicenseManager purani owner utility hai; ZeeAdminStudio alag owner panel hai.
 Private signing key customer ko kabhi na den. Commercial enforcement ke liye owner
 public key ke sath customer build chahiye. Preview mein issuer provisioned nahi.
 Windows Server 2022 CI evidence physical Windows 10 laptop ka proof nahi.
@@ -76,6 +76,24 @@ Details: PHASE6_INCIDENTS.md.
 
 Phase 7: App khulne par Overview dashboard milega. Internet speeds mein saat modem rows hain. Advanced controls se extra setup options dikhen ge. Settings se Dark/Light theme badal sakte hain. Ctrl+1 Overview, Ctrl+2 Map, Ctrl+3 Devices, Ctrl+4 Internet speeds, Ctrl+F device search. Advanced controls admin permission nahi hain; separate Admin Studio aglay phase mein hai.
 
-Phase 8.1: ZeeAdminStudio-Owner ZIP poori extract karein, phir ZeeAdminStudio.exe chalayein. Local owner username aur 12+ character password banayein. Customers, packages, reviewed profiles aur signed licences kaam karte hain. Planned package limits/custom branding abhi customer EXE par apply nahi hoti; ye Phase 8.2 hai. Purana issuer ho to naya key banane se pehle encrypted recovery PEM import karein. Private keys/passwords kabhi GitHub par na bhejein.
+Phase 8.1: ZeeAdminStudio-Owner ZIP poori extract karein, phir ZeeAdminStudio.exe chalayein. Local owner username aur 12+ character password banayein. Customers, packages, reviewed profiles aur signed licences kaam karte hain. Package limits aur customer branding Phase 8.2 se customer builds par apply hoti hain. Purana issuer ho to naya key banane se pehle encrypted recovery PEM import karein. Private keys/passwords kabhi GitHub par na bhejein.
 
 Phase 8.2: nayi v2 licence mein features/device limit enforce hain. Profiles > Prepare signed customer build, phir Builds / releases se owner Windows toolchain select karen. Branding customer EXE/installer mein apply hoti hai. Sirf owner build PC ko Python/PyInstaller chahiye; customer ko nahi. Existing owner records/issuer preserve hain. Online revoke/auto update download nahi; signed offline installer verify kar sakte hain. Details PHASE82_CUSTOMER_BUILDS.md.
+
+PHASE 9 — INSTALLER, LICENCE RECOVERY AUR PHONE
+Admin panel: ZeeAdminStudio-Setup-Windows artifact download aur Extract All karen.
+Andar ZeeAdminStudio-Setup-Windows-v0.4.15.exe run karen. Desktop shortcut se panel kholen.
+Customer monitor ka ZeeNetworkMonitor-Setup-Windows installer alag hai.
+Commercial customer installer owner Builds / releases se signed profile ke sath banayega.
+Public preview owner evaluation hai; ye kisi customer ki activated licence nahi.
+Licence / activation > Import signed licence. Previous valid licence backup local rehti hai.
+Recover previous valid licence usi PC/profile ki abhi-valid licence restore karta hai.
+Deactivate se current aur recovery licence copy dono remove hoti hain.
+Phone: Settings > Mobile HTTPS dashboard > specific PC LAN/VPN IP > Enable.
+Certificate fingerprint verify/trust kar ke phone browser mein shown HTTPS address kholen.
+New pairing code PC se phone mein den; code 5 minutes aur single use hai.
+Pairing 30 days; Revoke selected / ALL se phone access band karen.
+Stop mobile access se current pairing code expire hota hai; saved phones remain paired.
+Certificate files missing/expired/changed-IP hon to Stop > Reset certificate; phones dobara pair honge.
+Asal Windows 10/11 laptop, Android/iPhone aur VPN/network test Phase 10 pilot mein honge.
+Details: PHASE9_INSTALL_RECOVERY_MOBILE.md.

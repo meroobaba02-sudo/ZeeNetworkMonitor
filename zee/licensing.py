@@ -19,7 +19,7 @@ def verify(document,public_key,machine=None,now=None):
     if not isinstance(document,dict) or set(document)!={'payload','signature'} or not isinstance(document['payload'],dict):raise ValueError('Malformed licence document.')
     payload=document['payload'];signature=base64.b64decode(document['signature'],validate=True)
     Ed25519PublicKey.from_public_bytes(base64.b64decode(public_key,validate=True)).verify(signature,canonical(payload))
-    if payload.get('product')!=PRODUCT or payload.get('version') not in (1,2):raise ValueError('Wrong licence product/version.')
+    if payload.get('product')!=PRODUCT or (type(payload.get('version')) is not int or payload['version'] not in (1,2)):raise ValueError('Wrong licence product/version.')
     if payload.get('machine')!=(machine or fingerprint()):raise ValueError('This licence belongs to another PC.')
     if type(payload.get('activations')) is not int or payload['activations']!=1:raise ValueError('Each licence file authorizes exactly one machine.')
     now=time.time() if now is None else now
@@ -58,3 +58,55 @@ def status(data_dir):
     except FileNotFoundError:return {'valid':False,'production':True,'edition':'Activation required','reason':'Licence file missing.'}
     except ValueError as e:return {'valid':False,'production':True,'edition':'Activation required','reason':str(e)}
     except Exception:return {'valid':False,'production':True,'edition':'Activation required','reason':'Licence signature, issuer key or file is invalid.'}
+
+
+def validate_installed_document(document):
+    """Validate issuer, machine, expiry and the immutable customer profile before writing."""
+    key = json.loads(public_key_path().read_text())['public_key']
+    payload = verify(document, key)
+    profile = customer_profile()
+    if profile and (payload.get('version') != 2 or payload.get('customer_id') != profile['customer_id'] or payload.get('profile_id') != profile['profile_id']):
+        raise ValueError('Licence belongs to a different customer build profile.')
+    return payload
+
+
+def _atomic_document(path, document):
+    temporary = path.with_name(path.name + '.new')
+    try:
+        with temporary.open('w', encoding='utf-8') as output:
+            output.write(json.dumps(document, allow_nan=False))
+            output.flush()
+            os.fsync(output.fileno())
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def import_licence(data_dir, source, recover=False):
+    """Invalid imports never replace activation; recovery always revalidates the old grant."""
+    source = Path(source)
+    if source.stat().st_size > 65536:
+        raise ValueError('Licence file too large.')
+    document = json.loads(source.read_text(encoding='utf-8'))
+    payload = validate_installed_document(document)
+    folder = Path(data_dir); folder.mkdir(parents=True, exist_ok=True)
+    target = folder / 'license.json'
+    if not recover and target.exists():
+        try:
+            previous = json.loads(target.read_text(encoding='utf-8'))
+            validate_installed_document(previous)
+        except Exception:
+            previous = None
+        if previous is not None and previous != document:
+            _atomic_document(folder / 'license.previous.json', previous)
+    _atomic_document(target, document)
+    return payload
+
+
+def recover_licence(data_dir):
+    return import_licence(data_dir, Path(data_dir) / 'license.previous.json', recover=True)
+
+
+def deactivate_licence(data_dir):
+    for name in ('license.json', 'license.previous.json'):
+        (Path(data_dir) / name).unlink(missing_ok=True)

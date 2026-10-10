@@ -1,4 +1,4 @@
-# Zee Network Monitor Professional 0.4.14 — owner evaluation preview
+# Zee Network Monitor Professional 0.4.15 — owner evaluation preview
 
 Created by Zeeshan Rasool
 
@@ -120,3 +120,5 @@ Bounded background cleanup preserves unresolved and pinned incident rows; resolv
 Database schema is now 4; an existing schema 3 database is backed up to monitor.sqlite3.pre-v0410.bak before migration. Restore supports schema 4. Older v0.4.9 code cannot open schema 4: use the earlier full-data backup/schema 3 database for rollback. Details and tests: PHASE6_INCIDENTS.md.
 
 Current Admin Studio/customer package workflow: see PHASE82_CUSTOMER_BUILDS.md. Older phase documents describe historical behavior; v2 licence/profile enforcement starts in v0.4.14.
+
+Current installer/recovery/mobile acceptance: see PHASE9_INSTALL_RECOVERY_MOBILE.md. Separate Admin Studio Setup is available in v0.4.15. Native Windows CI covers customer install/activation/reinstall/recovery/uninstall; physical Windows 10/11, phones and network pilot remain unverified.

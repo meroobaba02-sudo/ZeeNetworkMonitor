@@ -1,5 +1,5 @@
 """Opt-in read-only HTTPS dashboard. No port forwarding, relay or device writes."""
-import json,secrets,hashlib,time,threading,ssl,ipaddress,datetime
+import json,secrets,hashlib,time,threading,ssl,ipaddress,datetime,html,math
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
@@ -13,13 +13,22 @@ HTML='<!doctype html><html><head><meta name="viewport" content="width=device-wid
 
 def certificate(folder,host):
     folder=Path(folder);folder.mkdir(parents=True,exist_ok=True);cert=folder/'mobile-cert.pem';keyfile=folder/'mobile-key.dpapi'
-    if not cert.exists() or not keyfile.exists():
+    address=ipaddress.ip_address(host)
+    if address.is_unspecified or address.is_multicast:raise ValueError('Use a specific PC LAN or VPN address.')
+    if cert.exists()!=keyfile.exists():raise ValueError('Incomplete local certificate. Stop service and reset certificate; paired phones must be revoked.')
+    if not cert.exists():
+        if (folder/'paired-devices.json').exists():raise ValueError('Certificate missing for existing phone pairings. Reset certificate and paired phones first.')
         key=rsa.generate_private_key(public_exponent=65537,key_size=2048)
         subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME,'Zee Network Monitor local dashboard')]);now=datetime.datetime.now(datetime.timezone.utc)
         certobj=x509.CertificateBuilder().subject_name(subject).issuer_name(subject).public_key(key.public_key()).serial_number(x509.random_serial_number()).not_valid_before(now-datetime.timedelta(minutes=5)).not_valid_after(now+datetime.timedelta(days=365)).add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address(host))]),critical=False).sign(key,hashes.SHA256())
-        cert.write_bytes(certobj.public_bytes(serialization.Encoding.PEM));keyfile.write_bytes(protect(key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,serialization.NoEncryption())))
+        encrypted=protect(key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,serialization.NoEncryption()))
+        try:
+            keyfile.write_bytes(encrypted);cert.write_bytes(certobj.public_bytes(serialization.Encoding.PEM))
+        except Exception:
+            cert.unlink(missing_ok=True);keyfile.unlink(missing_ok=True);raise
     certobj=x509.load_pem_x509_certificate(cert.read_bytes())
     if ipaddress.ip_address(host) not in certobj.extensions.get_extension_for_class(x509.SubjectAlternativeName).value.get_values_for_type(x509.IPAddress):raise ValueError('Certificate belongs to another IP. Stop service and reset local certificate, then trust the new fingerprint on your phone.')
+    if certobj.not_valid_before_utc>datetime.datetime.now(datetime.timezone.utc):raise ValueError('Local certificate not yet valid; check PC clock.')
     if certobj.not_valid_after_utc<=datetime.datetime.now(datetime.timezone.utc):raise ValueError('Local certificate expired. Stop service and reset certificate.')
     fingerprint=certobj.fingerprint(hashes.SHA256()).hex()
     # SSLContext requires a file. Create briefly in the per-user folder, then remove it.
@@ -30,10 +39,21 @@ def certificate(folder,host):
     return context,fingerprint
 
 class MobileServer:
-    def __init__(self,folder,host,port,context):
+    def __init__(self,folder,host,port,context,branding=None):
         ipaddress.ip_address(host);self.folder=Path(folder);self.lock=threading.Lock();self.snapshot={'at':time.time(),'pages':[],'devices':[],'events':[]};self.code='';self.code_until=0;self.attempts={};self.tokens={};self.threads=threading.BoundedSemaphore(8)
         self.tokens_path=self.folder/'paired-devices.json'
-        if self.tokens_path.exists():self.tokens=json.loads(self.tokens_path.read_text())
+        self.folder.mkdir(parents=True,exist_ok=True)
+        self.started=False;self.stopped=False
+        self.html=HTML
+        if branding:
+            self.html=self.html.replace('Zee Network Monitor',html.escape(branding['app_name'])).replace('Created by Zeeshan Rasool',html.escape(branding['watermark']))
+        if self.tokens_path.exists():
+            if self.tokens_path.stat().st_size>65536:raise ValueError('Phone pairing file too large; reset pairings.')
+            stored=json.loads(self.tokens_path.read_text())
+            if not isinstance(stored,dict) or len(stored)>64:raise ValueError('Invalid phone pairing file; reset pairings.')
+            for digest,value in stored.items():
+                if len(digest)!=64 or any(c not in '0123456789abcdef' for c in digest) or not isinstance(value,dict) or type(value.get('expires')) not in (int,float) or not math.isfinite(value['expires']) or not isinstance(value.get('label'),str) or len(value['label'])>128:raise ValueError('Invalid phone pairing file; reset pairings.')
+            self.tokens={k:v for k,v in stored.items() if v['expires']>time.time()}
         owner=self
         class Server(ThreadingHTTPServer):
             daemon_threads=True
@@ -59,7 +79,7 @@ class MobileServer:
                     with owner.lock:return owner.tokens.get(digest,{}).get('expires',0)>time.time()
                 except Exception:return False
             def do_GET(self):
-                if self.path=='/':self.reply(200,HTML,True)
+                if self.path=='/':self.reply(200,owner.html,True)
                 elif self.path=='/api/status':
                     if not self.authenticated():self.reply(401,{'error':'Pair this phone first'});return
                     with owner.lock:data=owner.snapshot.copy()
@@ -67,6 +87,9 @@ class MobileServer:
                 else:self.reply(404,{'error':'Not found'})
             def do_POST(self):
                 if self.path not in ('/pair','/logout'):self.reply(404,{});return
+                address,port=owner.server.server_address[:2]
+                expected_host=f'{address}:{port}'
+                if self.headers.get('Host')!=expected_host:self.reply(403,{});return
                 origin=self.headers.get('Origin')
                 if origin and origin!='https://'+self.headers.get('Host',''):self.reply(403,{});return
                 if self.path=='/logout':
@@ -81,12 +104,20 @@ class MobileServer:
                 except Exception:self.reply(400,{});return
                 now=time.time();ip=self.client_address[0]
                 with owner.lock:
+                    owner.attempts={k:v for k,v in owner.attempts.items() if v[1]>now}
+                    if ip not in owner.attempts and len(owner.attempts)>=256:self.reply(429,{});return
                     count,until=owner.attempts.get(ip,(0,now+60))
                     if now>until:count,until=0,now+60
                     owner.attempts[ip]=(count+1,until)
                     if count>=5:self.reply(429,{});return
                     if not owner.code or now>owner.code_until or not secrets.compare_digest(code,owner.code):self.reply(403,{});return
-                    owner.code='';token=secrets.token_urlsafe(32);owner.tokens[hashlib.sha256(token.encode()).hexdigest()]={'label':'Phone '+time.strftime('%Y-%m-%d %H:%M'),'expires':now+30*86400};owner.persist()
+                    owner.tokens={k:v for k,v in owner.tokens.items() if v['expires']>now}
+                    if len(owner.tokens)>=64:self.reply(409,{'error':'Revoke an existing phone first'});return
+                    token=secrets.token_urlsafe(32);digest=hashlib.sha256(token.encode()).hexdigest();owner.tokens[digest]={'label':'Phone '+time.strftime('%Y-%m-%d %H:%M'),'expires':now+30*86400}
+                    try:owner.persist()
+                    except OSError:
+                        owner.tokens.pop(digest,None);self.reply(503,{'error':'Cannot save pairing; check PC storage'});return
+                    owner.code=''
                 self.reply(200,{'paired':True},cookie='zee_session='+token+'; Secure; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000')
         self.server=Server((host,port),Handler);self.thread=threading.Thread(target=self.server.serve_forever,daemon=True)
     def persist(self):
@@ -101,5 +132,13 @@ class MobileServer:
         with self.lock:self.tokens.pop(id,None);self.persist()
     def update(self,snapshot):
         with self.lock:self.snapshot=snapshot
-    def start(self):self.thread.start()
-    def stop(self):self.server.shutdown();self.server.server_close();self.thread.join(timeout=6)
+    def start(self):
+        if self.stopped:raise ValueError('Create a new mobile server after stopping.')
+        if not self.started:self.thread.start();self.started=True
+    def stop(self):
+        if self.stopped:return
+        if self.started:self.server.shutdown()
+        self.server.server_close()
+        if self.started:self.thread.join(timeout=6)
+        with self.lock:self.code='';self.code_until=0
+        self.stopped=True
