@@ -36,7 +36,7 @@ shutil.copy(root/'LICENSE',studio/'LICENSE.txt')
 (studio/'BUILD_INFO.json').write_text(json.dumps(info,indent=2))
 (studio/'OWNER_README.txt').write_text('Run ZeeAdminStudio.exe from the fully extracted folder; do not move just the EXE. Create your local owner account with a 12+ character password. Existing issuer: import its encrypted recovery PEM before initializing a new key. Customer/package/profile records and signed licences work in Phase 8.1. Planned feature/device limits and branding are NOT enforced/applied in the customer EXE until Phase 8.2. Back up Studio encrypted and export a separate encrypted issuer recovery key. Never send private keys/passwords to GitHub or customers. See PHASE81_ADMIN_STUDIO.md.',encoding='utf-8')
 for p in studio.rglob('*'):
-    if p.is_file():assert p.suffix.lower() not in ('.py','.pyw') and 'issuer-private' not in p.name and 'recovery.pem' not in p.name and p.name!='studio.sqlite3'
+    if p.is_file():assert p.suffix.lower() not in ('.py','.pyw') and 'issuer-private' not in p.name and 'recovery.pem' not in p.name and p.name!='studio.sqlite3', 'Unexpected Studio package file: '+str(p.relative_to(studio))
 with zipfile.ZipFile(release/'ZeeAdminStudio-Owner-v0.4.13.zip','w',zipfile.ZIP_DEFLATED) as z:
     for p in studio.rglob('*'):
         if p.is_file():z.write(p,str(p.relative_to(studio.parent)))
