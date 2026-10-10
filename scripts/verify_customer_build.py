@@ -60,7 +60,7 @@ with tempfile.TemporaryDirectory(prefix='zee-ci-customer-') as temp:
             activated=json.loads((installed_data/'customer-build-smoke.json').read_text());assert activated['licence']['valid'] and activated['device_limit']==2
             store=Store(installed_data/'monitor.sqlite3');store.save(Device(name='Preserve during reinstall',host='127.0.0.1'));store.backup(installed_data/'accepted-backup.sqlite3');store.close()
             from zee.credentials import Vault
-            vault_path=installed_data/'credentials.bin';vault=Vault(vault_path);vault.set('ci-only',{'password':'CI disposable credential'})
+            vault_path=installed_data/'credentials.dpapi.json';vault=Vault(vault_path);vault.set('ci-only',{'password':'CI disposable credential'})
             license_before=(installed_data/'license.json').read_bytes();vault_before=vault_path.read_bytes()
             install(setup);execute(installed/'ZeeNetworkMonitor.exe','--smoke-test')
             upgraded=json.loads((installed_data/'customer-build-smoke.json').read_text());assert upgraded['title'].endswith(VERSION) and upgraded['licence']['valid']
