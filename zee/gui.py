@@ -562,7 +562,7 @@ class Window(PageControls,QMainWindow):
         self.cleanup_status=QLabel();self.cleanup_status.setWordWrap(True);form.addRow(self.cleanup_status)
         row=QHBoxLayout();row.addWidget(button('Save alert / history settings',self.save_settings,True));row.addWidget(button('Clean expired records now',lambda:self.prune(manual=True)));row.addWidget(button('Test buzzer',self.test_buzzer));form.addRow(row)
         tools=QGroupBox('Setup, backup & support');grid=QGridLayout(tools);layout.addWidget(tools)
-        actions=[('Network setup / paths',self.network_setup),('Manage networks',self.manage_pages),('Connect tower radios',self.connect_radios),('Backup database',self.backup),('Restore backup and close',self.restore_database),('Advanced monitoring / history',self.performance_dialog),('Help / About',self.help_about),('Licence / activation',self.license_dialog),('Mobile HTTPS dashboard',self.mobile_dialog),('Add WAN templates',self.wan_templates),('Verify offline installer update',self.verify_offline_update)]
+        actions=[('Real-network pilot / support report',self.pilot_dialog),('Network setup / paths',self.network_setup),('Manage networks',self.manage_pages),('Connect tower radios',self.connect_radios),('Backup database',self.backup),('Restore backup and close',self.restore_database),('Advanced monitoring / history',self.performance_dialog),('Help / About',self.help_about),('Licence / activation',self.license_dialog),('Mobile HTTPS dashboard',self.mobile_dialog),('Add WAN templates',self.wan_templates),('Verify offline installer update',self.verify_offline_update)]
         for i,(title,fn) in enumerate(actions):grid.addWidget(button(title,fn),i//2,i%2)
         info=QLabel(self.branding['app_name']+' • '+self.branding['watermark']+'\nDatabase: '+str(self.store.path)+'\nActual modem/radio profiles and Windows Internet paths require verification on your network.');info.setWordWrap(True);layout.addWidget(info);layout.addStretch();self.tabs.addTab(page,'Settings & scope')
 
@@ -1139,6 +1139,9 @@ class Window(PageControls,QMainWindow):
         self.export('events.csv',self.event_rows(2147483647),['id','device','at','kind','message'])
 
     def closeEvent(self,event):
+        if getattr(self,'pilot_capture',None):
+            try:self.pilot_capture.stop()
+            except Exception:__import__('logging').warning('Pilot evidence could not be saved during shutdown.')
         for dialog in self.details_windows:dialog.close()
         self.pro_panel.timer.stop()
         self.seven_wan.timer.stop()

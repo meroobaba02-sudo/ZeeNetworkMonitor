@@ -1,4 +1,4 @@
-# Zee Network Monitor Professional 0.4.15 — owner evaluation preview
+# Zee Network Monitor Professional 0.4.16 — owner evaluation preview
 
 Created by Zeeshan Rasool
 
@@ -122,3 +122,5 @@ Database schema is now 4; an existing schema 3 database is backed up to monitor.
 Current Admin Studio/customer package workflow: see PHASE82_CUSTOMER_BUILDS.md. Older phase documents describe historical behavior; v2 licence/profile enforcement starts in v0.4.14.
 
 Current installer/recovery/mobile acceptance: see PHASE9_INSTALL_RECOVERY_MOBILE.md. Separate Admin Studio Setup is available in v0.4.15. Native Windows CI covers customer install/activation/reinstall/recovery/uninstall; physical Windows 10/11, phones and network pilot remain unverified.
+
+Field-pilot preparation is available in v0.4.16; see PHASE10_REAL_NETWORK_PILOT.md. Real-network, long-run laptop and phone evidence remains unperformed until the operator records and submits the pilot. Commercial launch is not approved by automated CI.

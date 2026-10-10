@@ -17,7 +17,9 @@ def main():
     parser.add_argument('--data-dir',type=Path)
     parser.add_argument('--smoke-test',action='store_true')
     parser.add_argument('--screenshot',type=Path)
+    parser.add_argument('--pilot-smoke-test',action='store_true')
     args=parser.parse_args()
+    if args.pilot_smoke_test and not args.smoke_test:parser.error('--pilot-smoke-test requires --smoke-test')
     from PySide6.QtCore import Qt
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app=QApplication(sys.argv)
@@ -62,6 +64,11 @@ def main():
             window.check_licence() # Apply the newly imported package before showing the dashboard.
         window.show()
         if args.smoke_test:
+            if args.pilot_smoke_test:
+                from zee.pilot_dialog import PilotDialog
+                import json
+                pilot=PilotDialog(window);pilot.show();app.processEvents();pilot.close()
+                (base/'pilot-runtime-smoke.json').write_text(json.dumps(pilot.session.report()),encoding='utf-8')
             from pysnmp.hlapi.v3arch.asyncio import SnmpEngine
             snmp_check=SnmpEngine();snmp_check.close_dispatcher()
             def finish():

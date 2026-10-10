@@ -1,6 +1,6 @@
 # Zee Network Monitor
 
-Windows desktop network monitor for towers, radios, WAN links and camera services. Current customer GUI release: **0.4.15**, owner-evaluation preview.
+Windows desktop network monitor for towers, radios, WAN links and camera services. Current customer GUI release: **0.4.16**, owner-evaluation preview.
 
 Download the setup or portable package from a successful [Windows Actions run](https://github.com/meroobaba02-sudo/ZeeNetworkMonitor/actions). No Python is needed on the customer's laptop. Keep the entire portable folder together.
 
@@ -29,3 +29,5 @@ Phase 8.1 adds a separate ZeeAdminStudio.exe owner/viewer application with local
 Phase 8.2: signed v2 package permissions/device caps, customer branding and pinned profiles, owner Windows customer build runner, artifact-verified release history and signed offline installer verification. [Owner workflow, toolchain requirements and remaining online work](docs/PHASE82_CUSTOMER_BUILDS.md). Default download remains owner evaluation until your own public issuer/profile is provisioned.
 
 Phase 9 adds a separate Admin Studio Windows installer, validated previous-licence recovery, safer mobile certificate/pairing lifecycle and native customer installer acceptance. See [Phase 9 guide](docs/PHASE9_INSTALL_RECOVERY_MOBILE.md). Physical network and phone testing belongs to the Phase 10 pilot.
+
+Phase 10.1 delivers Settings > Real-network pilot / support report, 18 operator-recorded scenarios, opt-in CPU/RAM/storage/heartbeat capture, privacy-safe JSON export and an explicit commercial-release review gate. Actual hardware acceptance has not been performed. See [field pilot guide](docs/PHASE10_REAL_NETWORK_PILOT.md).

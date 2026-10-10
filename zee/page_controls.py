@@ -120,6 +120,10 @@ class PageControls:
             import shutil
             shutil.copyfile(path,self.store.path.parent/'restore.pending.sqlite3');self.close()
         except (OSError,ValueError,sqlite3.Error) as e:QMessageBox.warning(self,'Restore failed',str(e))
+    def pilot_dialog(self):
+        from .pilot_dialog import PilotDialog
+        try:PilotDialog(self).exec()
+        except Exception:QMessageBox.warning(self,'Pilot evidence unavailable','Could not read pilot evidence. Preserve pilot-evidence.json for support; monitoring configuration was not changed.')
     def license_dialog(self):
         from .system_dialogs import LicenseDialog
         LicenseDialog(self).exec()

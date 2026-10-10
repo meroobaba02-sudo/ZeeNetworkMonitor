@@ -1,4 +1,4 @@
-ZEE NETWORK MONITOR PROFESSIONAL v0.4.15
+ZEE NETWORK MONITOR PROFESSIONAL v0.4.16
 
 WINDOWS PAR CHALANA
 Successful GitHub Actions run se Setup ya Portable artifact download karen.
@@ -82,7 +82,7 @@ Phase 8.2: nayi v2 licence mein features/device limit enforce hain. Profiles > P
 
 PHASE 9 — INSTALLER, LICENCE RECOVERY AUR PHONE
 Admin panel: ZeeAdminStudio-Setup-Windows artifact download aur Extract All karen.
-Andar ZeeAdminStudio-Setup-Windows-v0.4.15.exe run karen. Desktop shortcut se panel kholen.
+Andar ZeeAdminStudio-Setup-Windows-v0.4.16.exe run karen. Desktop shortcut se panel kholen.
 Customer monitor ka ZeeNetworkMonitor-Setup-Windows installer alag hai.
 Commercial customer installer owner Builds / releases se signed profile ke sath banayega.
 Public preview owner evaluation hai; ye kisi customer ki activated licence nahi.
@@ -97,3 +97,20 @@ Stop mobile access se current pairing code expire hota hai; saved phones remain 
 Certificate files missing/expired/changed-IP hon to Stop > Reset certificate; phones dobara pair honge.
 Asal Windows 10/11 laptop, Android/iPhone aur VPN/network test Phase 10 pilot mein honge.
 Details: PHASE9_INSTALL_RECOVERY_MOBILE.md.
+
+PHASE 10.1 — APNE NETWORK PAR PILOT
+Settings > Real-network pilot / support report kholen.
+Pehle apne actual devices/routes configure karke Start monitoring karen.
+Pilot panel mein Start performance capture dabayen. Panel band karne se capture nahi rukti.
+Har test dropdown se select karen, asal observed result aur evidence note likhen, Save karen.
+Fault delays seconds mein record karen. Wrong alerts / missed faults asal counts hain;
+Not measured ko andazan zero na banayen. Hardware na ho to Not performed / Blocked chhoren.
+Planned outage karne se pehle affected users se waqt tay karen. Software fault khud nahi banata.
+4-6 ghantay monitor karen; kam az kam 4 hours fresh monitoring capture chahiye.
+Stop & save capture, phir Export support / pilot report > zee-pilot-report.json save karen.
+Report yahan bhej sakte hain. Notes include karna optional hai; passwords/keys na likhen.
+IP/device/network names, raw logs, credentials aur licences automatic export mein nahi aate.
+Purani evidence new session par archive rehti hai. App crash/restart ki running capture Interrupted hoti hai.
+Phase 10.1 pilot tooling hai. Phase 10.2 mein actual report review, observed bugs ke fixes
+or commercial launch decision hoga. Real hardware evidence ke baghair commercial release approved nahi.
+Details: PHASE10_REAL_NETWORK_PILOT.md.

@@ -29,7 +29,11 @@ jobs:
       - name: Record synthetic scheduling, UI and cleanup measurements
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python scripts/benchmark_phase3.py phase3-benchmark-windows.json
+        run: |
+          python scripts/benchmark_phase3.py phase3-benchmark-windows.json
+          if ($LASTEXITCODE -ne 0) { throw "Scheduling benchmark failed" }
+          python scripts/benchmark_phase10.py phase10-benchmark-windows.json
+          if ($LASTEXITCODE -ne 0) { throw "Pilot benchmark failed" }
       - name: Build customer application and separate owner manager
         run: |
           python -m PyInstaller --clean --noconfirm ZeeNetworkMonitor.spec
@@ -55,6 +59,10 @@ jobs:
           $studio = Start-Process -FilePath 'dist/ZeeAdminStudio/ZeeAdminStudio.exe' -ArgumentList @('--smoke-test','--data-dir',$studioData) -PassThru
           if (-not $studio.WaitForExit(60000)) { $studio.Kill(); throw 'Admin Studio smoke timed out' }
           if ($studio.ExitCode -ne 0 -or -not (Test-Path (Join-Path $studioData 'studio-smoke-ok.txt'))) { throw 'Admin Studio smoke failed' }
+      - name: Verify frozen field-pilot panel and safe defaults
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python scripts/verify_pilot_runtime.py
       - name: Package and audit portable runtime contents
         run: python scripts/package_release.py
       - name: Build per-user Windows installer
@@ -71,7 +79,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         shell: pwsh
         run: |
-          $setup = Join-Path $PWD 'release/ZeeNetworkMonitor-Setup-Windows-v0.4.15.exe'
+          $setup = Join-Path $PWD 'release/ZeeNetworkMonitor-Setup-Windows-v0.4.16.exe'
           $install = Join-Path $env:LOCALAPPDATA 'Programs/ZeeNetworkMonitor'
           $data = Join-Path $env:LOCALAPPDATA 'ZeeNetworkMonitor'
           New-Item -ItemType Directory -Force $data | Out-Null
@@ -104,7 +112,7 @@ jobs:
         with:
           name: ZeeNetworkMonitor-Setup-Windows
           path: |
-            release/ZeeNetworkMonitor-Setup-Windows-v0.4.15.exe
+            release/ZeeNetworkMonitor-Setup-Windows-v0.4.16.exe
             release/INSTALLER_TEST_REPORT.txt
             release/CUSTOMER_BUILD_TEST_REPORT.txt
           if-no-files-found: error
@@ -112,26 +120,26 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeNetworkMonitor-Portable-Windows
-          path: release/ZeeNetworkMonitor-Portable-Windows-v0.4.15.zip
+          path: release/ZeeNetworkMonitor-Portable-Windows-v0.4.16.zip
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeLicenseManager-Admin
-          path: release/ZeeLicenseManager-Admin-v0.4.15.zip
+          path: release/ZeeLicenseManager-Admin-v0.4.16.zip
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeAdminStudio-Owner
-          path: release/ZeeAdminStudio-Owner-v0.4.15.zip
+          path: release/ZeeAdminStudio-Owner-v0.4.16.zip
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeAdminStudio-Setup-Windows
           path: |
-            release/ZeeAdminStudio-Setup-Windows-v0.4.15.exe
+            release/ZeeAdminStudio-Setup-Windows-v0.4.16.exe
             release/STUDIO_INSTALLER_TEST_REPORT.txt
           if-no-files-found: error
           retention-days: 30
@@ -143,6 +151,7 @@ jobs:
           path: |
             windows-tests.xml
             phase3-benchmark-windows.json
+            phase10-benchmark-windows.json
             build/ZeeNetworkMonitor/warn-ZeeNetworkMonitor.txt
             release/CUSTOMER_BUILD_FAILURE.log
             release/CUSTOMER_BUILD_TEST_REPORT.txt
