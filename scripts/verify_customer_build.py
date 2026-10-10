@@ -29,14 +29,26 @@ with tempfile.TemporaryDirectory(prefix='zee-ci-customer-') as temp:
         def launch(path):return subprocess.run([str(runtime/'ZeeNetworkMonitor.exe'),'--smoke-test','--data-dir',str(path)],timeout=60,env=env).returncode
         assert launch(data)==0
         state=json.loads((data/'customer-build-smoke.json').read_text());assert state['licence']['valid'] and state['require_issuer'] and state['device_limit']==2 and state['features']==['map','monitoring'] and state['profile_digest']==digest(profile) and state['title'].startswith(payload['branding']['app_name'])
+        # Build the actual previous released source with the SAME signed profile/public key.
+        # No private signing material is written into either source checkout or runtime.
+        baseline_sha='b890bb63d12aef75dd20ea9b4b6c6358cc3e5fa2'
+        baseline=folder/'baseline';baseline.mkdir()
+        execute('git','init',baseline)
+        execute('git','-C',baseline,'fetch','--depth=1','https://github.com/meroobaba02-sudo/ZeeNetworkMonitor.git',baseline_sha)
+        execute('git','-C',baseline,'checkout','--detach','FETCH_HEAD')
+        actual=subprocess.check_output(['git','-C',str(baseline),'rev-parse','HEAD'],text=True).strip();assert actual==baseline_sha
+        previous_out=folder/'previous-results'
+        subprocess.run([sys.executable,str(baseline/'admin/customer_build.py'),'--source',str(baseline),'--profile',str(profile_path),'--public',str(public_path),'--output',str(previous_out),'--iscc',str(compiler)],cwd=baseline,env=env,timeout=1800,check=True)
+        previous_report=json.loads((previous_out/'build-result.json').read_text());assert previous_report['version']=='0.4.14' and previous_report['status']=='passed'
+        previous_setup=previous_out/next(a['name'] for a in previous_report['artifacts'] if a['kind']=='installer')
         # Exercise the actual customer-specific Inno package in the default per-profile folders.
         setup=out/next(a['name'] for a in result['artifacts'] if a['kind']=='installer')
         installed=Path(os.environ['LOCALAPPDATA'])/'Programs'/('ZeeCustomer-'+payload['profile_id'])
         installed_data=Path(os.environ['LOCALAPPDATA'])/('ZeeCustomer-'+payload['profile_id'])
         try:
-            install(setup);shortcuts(payload['branding']['app_name'])
+            install(previous_setup);shortcuts(payload['branding']['app_name'])
             execute(installed/'ZeeNetworkMonitor.exe','--smoke-test')
-            inactive=json.loads((installed_data/'customer-build-smoke.json').read_text());assert not inactive['licence']['valid'] and inactive['require_issuer']
+            inactive=json.loads((installed_data/'customer-build-smoke.json').read_text());assert not inactive['licence']['valid'] and inactive['require_issuer'] and inactive['title'].endswith('0.4.14')
             # The same import service used by the desktop activation dialog; issuer paths scoped to fixture only.
             from zee import licensing
             old_path=licensing.public_key_path;old_digest=licensing.EXPECTED_PROFILE_SHA256;old_required=licensing.REQUIRE_ISSUER
@@ -51,6 +63,7 @@ with tempfile.TemporaryDirectory(prefix='zee-ci-customer-') as temp:
             vault_path=installed_data/'credentials.bin';vault=Vault(vault_path);vault.set('ci-only',{'password':'CI disposable credential'})
             license_before=(installed_data/'license.json').read_bytes();vault_before=vault_path.read_bytes()
             install(setup);execute(installed/'ZeeNetworkMonitor.exe','--smoke-test')
+            upgraded=json.loads((installed_data/'customer-build-smoke.json').read_text());assert upgraded['title'].endswith(VERSION) and upgraded['licence']['valid']
             assert (installed_data/'license.json').read_bytes()==license_before and vault_path.read_bytes()==vault_before
             assert Vault(vault_path).get('ci-only')['password']=='CI disposable credential'
             store=Store(installed_data/'monitor.sqlite3');assert store.devices()[0].name=='Preserve during reinstall';store.save(Device(name='Changed after backup',host='127.0.0.2'));store.close()
@@ -67,7 +80,7 @@ with tempfile.TemporaryDirectory(prefix='zee-ci-customer-') as temp:
         # Resource deletion cannot switch a compiled customer build back to owner evaluation.
         asset=runtime/'_internal/assets/customer-profile.json';raw=asset.read_bytes();asset.unlink();assert launch(folder/'missing-profile')!=0;asset.write_bytes(raw)
         asset=runtime/'_internal/assets/issuer-public.json';asset.unlink();assert launch(folder/'missing-issuer')!=0
-        (root/'release/CUSTOMER_BUILD_TEST_REPORT.txt').write_text('Disposable owner build: signed profile, full regression suite, portable + customer installer, frozen activation/branding/permissions, deleted profile/issuer fail-closed, and artifact hashes passed. Fixture private key was held in memory only; no fixture package is released. Native customer install/shortcuts, activation import, same-version reinstall preserving configuration/DPAPI credentials/licence, queued recovery with safety backup, uninstall preserving user data passed on Windows Server 2022. Physical Windows 10/11, phone/VPN/hardware and cross-release binary upgrade are untested.\n',encoding='utf-8')
+        (root/'release/CUSTOMER_BUILD_TEST_REPORT.txt').write_text('Disposable owner build: signed profile, full regression suite, portable + customer installer, frozen activation/branding/permissions, deleted profile/issuer fail-closed, and artifact hashes passed. Fixture private key was held in memory only; no fixture package is released. Native customer install/shortcuts, activation import, released v0.4.14-to-v0.4.15 binary upgrade preserving configuration/DPAPI credentials/licence, queued recovery with safety backup, uninstall preserving user data passed on Windows Server 2022. Physical Windows 10/11 and phone/VPN/hardware are untested.\n',encoding='utf-8')
     except Exception:
         if (out/'build.log').exists():(root/'release/CUSTOMER_BUILD_FAILURE.log').write_bytes((out/'build.log').read_bytes())
         raise
