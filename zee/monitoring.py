@@ -38,8 +38,10 @@ class Measurements(QObject):
     def submit(self,d,speed=False):
         key=(d.id,speed)
         if self.cancel.is_set() or any(k[0]==d.id for k in self.pending) or len(self.pending)>=self.limit or not d.enabled or not d.host:return False
-        page=self.window.current_page()
-        if (page.interface_hint or page.gateway_hint) and not page.routing_verified:return False
+        page=self.window.page_for_device(d)
+        if page is None or page.archived:return False
+        if (self.window.monitor_all_enabled or page.interface_hint or page.gateway_hint) and not page.routing_verified:return False
+        if self.window.monitor_all_enabled and d.id in self.window.ambiguous_devices:return False
         p=d.integration
         if speed:
             day=time.strftime('%Y-%m-%d');budgetkey='speed-budget:'+d.id+':'+day
@@ -48,7 +50,7 @@ class Measurements(QObject):
             if not p.get('wan_verified') or not p.get('speed_url'):raise ValueError('Configure and verify a WAN-specific route and HTTPS speed endpoint first.')
             # Reserve the maximum before starting: interrupted/failed tests cannot evade the budget.
             self.window.store.set_setting(budgetkey,used+reservation)
-        page=self.window.current_page()
+        page=self.window.page_for_device(d)
         source=d.source or page.source_ip
         try:secrets=self.vault.get(d.id)
         except Exception:secrets={}
@@ -57,7 +59,7 @@ class Measurements(QObject):
     def complete(self,identity,result):
         d,speed,generation=identity;key=(d.id,speed);self.pending.pop(key,None)
         if self.cancel.is_set() or generation!=self.window.engine.generation:return
-        current=next((x for x in self.window.devices if x.id==d.id),None)
+        current=next((x for x in self.window.monitor_devices() if x.id==d.id),None)
         if current!=d:return
         if speed:self.speed_latest[d.id]=result
         else:
@@ -90,7 +92,7 @@ class Measurements(QObject):
         self.changed.emit()
     def tick(self):
         if not self.enabled:return
-        for d in self.window.devices:
+        for d in self.window.monitor_devices():
             if self.due.get((d.id,False),0)<=time.monotonic():self.submit(d)
             if d.integration.get('automatic_speed') and self.due.get((d.id,True),0)<=time.monotonic():
                 try:self.submit(d,True)

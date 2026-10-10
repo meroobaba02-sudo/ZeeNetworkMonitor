@@ -15,18 +15,33 @@ class PageControls:
         id=self.page_picker.itemData(index)
         if not id or id==self.page_id:return
         self._resume_minimized=False
+        if self.monitor_all_enabled:
+            self.page_id=id;self.store.set_setting('active_page',id);self.reload();return
         self.engine.invalidate();self.measurements.stop();self.requested.clear();self.buzzer.update({});self.page_id=id;self.states.clear();self.latest.clear();self.streaks.clear();self.alerted.clear()
         self.measurements.latest.clear();self.measurements.speed_latest.clear();self.telemetry_alerted.clear()
         self.start_button.setText('▶ Start monitoring');self.store.set_setting('active_page',id);self.reload()
+    def monitor_devices(self):
+        return self.all_devices if self.monitor_all_enabled else self.devices
+    def page_for_device(self,d):
+        return self.network_pages.get(d.page_id)
+    def prepare_network_probe(self,d,fn):
+        from .network_paths import prepare_probe
+        return prepare_probe(d,self.page_for_device(d),fn,self.monitor_all_enabled,self.monitor_all_enabled and d.id in self.ambiguous_devices)
     def scoped_probe(self,d):
-        page=self.page_snapshot
-        if (page.interface_hint or page.gateway_hint) and not page.routing_verified:return Result(False,error='Network routing not verified; checks paused.',infrastructure_error=True)
-        source=d.source or page.source_ip
-        try:
-            if source:
-                if ipaddress.ip_address(source).version!=ipaddress.ip_address(d.host).version:raise ValueError()
-            return probe(replace(d,source=source))
-        except ValueError:return Result(False,error='Source-bound checks need matching literal IP addresses.',infrastructure_error=True)
+        return probe(d)
+    def set_monitor_all(self,enabled):
+        self._resume_minimized=False
+        self.monitor_all_enabled=enabled;self.store.set_setting('monitor_all',enabled)
+        self.engine.invalidate();self.measurements.stop();self.requested.clear()
+        self.states.clear();self.latest.clear();self.streaks.clear();self.alerted.clear();self.telemetry_alerted.clear()
+        self.measurements.latest.clear();self.measurements.speed_latest.clear()
+        self.start_button.setText('▶ Start monitoring');self.reload();self.refresh_map(False)
+    def network_setup(self):
+        from .network_setup import NetworkSetup
+        NetworkSetup(self).exec()
+    def connect_radios(self):
+        from .network_setup import RadioLinks
+        RadioLinks(self).exec()
     def manage_pages(self):
         actions=['Add network','Edit network / routing','Duplicate network','Move page up','Move page down','Archive network','Restore archived network','Delete network','Export network','Import network']
         action,ok=QInputDialog.getItem(self,'Network pages','Action',actions,0,False)
@@ -120,7 +135,7 @@ class PageControls:
         now=time.time();pages=self.store.pages();names={p.id:p.name for p in pages};towers={s.id:s.name for s in self.store.stations()};devices=[]
         inventory=[d for d in self.store.devices() if any(p.id==d.page_id and not p.archived for p in pages)]
         for d in inventory:
-            selected=d.page_id==self.page_id;r=self.measurements.latest.get(d.id,{}) if selected else {};speed=self.measurements.speed_latest.get(d.id,{}) if selected else {};age=now-r.get('at',0);fresh=age<=max(30,d.integration.get('poll_seconds',30)*3)
+            selected=self.monitor_all_enabled or d.page_id==self.page_id;r=self.measurements.latest.get(d.id,{}) if selected else {};speed=self.measurements.speed_latest.get(d.id,{}) if selected else {};age=now-r.get('at',0);fresh=age<=max(30,d.integration.get('poll_seconds',30)*3)
             speed_fresh=speed and now-speed.get('at',0)<=max(60,d.integration.get('speed_interval',900));rate=speed if speed_fresh else r;rate_fresh=speed_fresh or fresh
             state=self.state(d) if selected else 'Not monitored'
             health=wan_health(d,state,r,speed,now)[0] if d.wan or d.kind.startswith('WAN') else 'Not a WAN'

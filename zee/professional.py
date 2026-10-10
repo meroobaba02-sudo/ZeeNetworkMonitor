@@ -16,7 +16,7 @@ class PageDialog(QDialog):
         for key,title in [('name','Network name'),('source_ip','Optional local source IP'),('interface_hint','Network adapter name (reference)'),('gateway_hint','Gateway (reference)'),('notes','Routing / cable notes')]:
             edit=QLineEdit(str(getattr(page,key)));self.fields[key]=edit;form.addRow(title,edit)
         self.verified=QCheckBox('I verified the Windows route/interface for this network');self.verified.setChecked(page.routing_verified);form.addRow(self.verified)
-        label=QLabel('Only the selected page is monitored. Changing pages stops checks. Source IP binds supported ICMP/HTTP probes; adapter/gateway names are notes, not route changes. Overlapping destinations require verified OS/VPN routing. No routes are installed automatically.');label.setWordWrap(True);layout.addWidget(label)
+        label=QLabel('Selected-page mode stops checks when changing pages. Optional Monitor all networks keeps active pages running together and requires operator-verified paths. Source IP binds supported ICMP/HTTP probes; adapter/gateway names are references, not route changes. Overlapping destinations need distinct sources and verified Windows/VPN routing. No routes are installed automatically.');label.setWordWrap(True);layout.addWidget(label)
         buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);buttons.accepted.connect(self.accept);buttons.rejected.connect(self.reject);layout.addWidget(buttons)
     def value(self):
         p=replace(self.page,**{k:w.text().strip() for k,w in self.fields.items()},routing_verified=self.verified.isChecked());p.validate();return p

@@ -235,12 +235,17 @@ class Window(PageControls,QMainWindow):
         self.store=store
         self.page_id=store.setting('active_page','default')
         self.page_snapshot=self.current_page()
+        self.monitor_all_enabled=store.setting('monitor_all',False)
+        self.network_pages={p.id:p for p in store.pages()}
+        self.all_devices=[]
+        self.ambiguous_devices=set()
         from .credentials import Vault
         from .monitoring import Measurements
         self.vault=Vault(store.path.parent/'credentials.dpapi.json')
         self.measurements=Measurements(self,self.vault)
         self.details_windows=[]
         self.engine=Engine(self,probe_fn=self.scoped_probe)
+        self.engine.prepare_probe=self.prepare_network_probe
         self.engine.result.connect(self.result)
         self.engine.busy_changed.connect(self.busy)
         self.states={}
@@ -267,7 +272,7 @@ class Window(PageControls,QMainWindow):
         title=QLabel('ZEE  /  NETWORK MONITOR PROFESSIONAL')
         title.setObjectName('title')
         title.setStyleSheet('font-size:20px; font-weight:700;')
-        subtitle=QLabel('Selected network only • Live map • Professional preview')
+        subtitle=QLabel('Network pages • Live map • Professional preview')
         subtitle.setObjectName('subtitle')
         titles.addWidget(title)
         titles.addWidget(subtitle)
@@ -288,6 +293,7 @@ class Window(PageControls,QMainWindow):
         self.buzzer_status()
         layout.addLayout(head)
         self.summary=QLabel()
+        self.summary.setTextFormat(Qt.PlainText)
         self.summary.setObjectName('card')
         self.summary.setWordWrap(True)
         layout.addWidget(self.summary)
@@ -351,7 +357,14 @@ class Window(PageControls,QMainWindow):
         self.pro_panel=ProfessionalPanel(self);self.tabs.addTab(self.pro_panel,'WAN / Radio')
         self.page_picker=QComboBox();self.page_picker.setMaximumWidth(160);self.page_picker.currentIndexChanged.connect(self.change_page)
         self.navigation.addWidget(QLabel('NETWORK PAGE'));self.navigation.addWidget(self.page_picker)
+        self.navigation.addWidget(button('Network setup / paths',self.network_setup))
+        self.monitor_all_box=QCheckBox('Monitor all networks')
+        self.monitor_all_box.setToolTip('Uses shared worker limits; each network must have an operator-verified path. Map/history stay on the selected page.')
+        self.monitor_all_box.setChecked(self.monitor_all_enabled)
+        self.monitor_all_box.toggled.connect(self.set_monitor_all)
+        self.navigation.addWidget(self.monitor_all_box)
         self.navigation.addWidget(button('Manage networks',self.manage_pages))
+        self.navigation.addWidget(button('Connect tower radios',self.connect_radios))
         self.nav_buttons=[]
         for i,text in enumerate(['◉  Map','▤  Devices / WANs','◷  History','⌁  Topology','♧  Alerts','⚙  Settings','◈  WAN / Radio']):
             b=QPushButton(text);b.setObjectName('nav');b.setCheckable(True);b.setFixedWidth(148)
@@ -501,7 +514,7 @@ class Window(PageControls,QMainWindow):
         form.addRow(button('License / activation',self.license_dialog))
         form.addRow(button('Mobile HTTPS dashboard',self.mobile_dialog))
         form.addRow(button('Add 5 unconfigured WAN templates',self.wan_templates))
-        info=QLabel('Database: '+str(self.store.path)+'\nProfessional preview: selected network only. Configure verified adapters under WAN / Radio. Secrets use Windows DPAPI. See PROFESSIONAL_GUIDE for supported measurements, routing, licensing and mobile setup. Windows 10 hardware and real Rocket M5 firmware remain unverified.')
+        info=QLabel('Database: '+str(self.store.path)+'\nProfessional preview: choose selected-page or all-network monitoring. Configure verified adapters under WAN / Radio. Secrets use Windows DPAPI. See PROFESSIONAL_GUIDE for supported measurements, routing, licensing and mobile setup. Windows 10 hardware and real Rocket M5 firmware remain unverified.')
         info.setWordWrap(True)
         form.addRow(info)
         self.tabs.addTab(page,'Settings & scope')
@@ -509,7 +522,7 @@ class Window(PageControls,QMainWindow):
     def help_about(self):
         dialog=QDialog(self);dialog.setWindowTitle('Help / About');dialog.resize(700,520)
         layout=QVBoxLayout(dialog);text=QTextEdit();text.setReadOnly(True)
-        text.setPlainText(f"Zee Network Monitor {VERSION}\nCreated by Zeeshan Rasool\n\nFIRST NETWORK\nManage networks > Add. Select the page, then Map > Add tower. Devices > Add device: enter name and management IP, select tower, save. Start monitoring. Only the selected page is monitored.\n\nRADIO / WAN\nWAN / Radio > select device > Configure adapter. Use a verified firmware profile and real OIDs/API fields. Ping is separate from wireless quality and Internet reachability. Missing measurements remain Unknown/Unavailable. Traffic rate is usage, not capacity. Controlled speed tests consume data; automatic tests are off by default.\n\nFIVE NETWORKS\nConfigure Windows interfaces and routes first. Page source IP selects the source where supported; gateway hints do not create routes. Overlapping subnets require separate routing/interface setup.\n\nCCTV\nSet HTTP/HTTPS management and optional RTSP endpoint. Service status is separate from ping; no continuous video preview.\n\nMOBILE\nSettings > Mobile HTTPS dashboard. Explicitly start the service, verify certificate fingerprint, then pair from a phone. Remote access requires your configured VPN.\n\nSAFETY / BACKUP\nSettings > Backup database. Credentials use Windows DPAPI and are not included in configuration exports. Licence manager belongs to the owner. This owner-evaluation build has no issuer key provisioned.\n\nTESTING\nReal Rocket firmware, physical Windows 10 and phone compatibility require field testing. See the packaged PROFESSIONAL_GUIDE for details.")
+        text.setPlainText(f"Zee Network Monitor {VERSION}\nCreated by Zeeshan Rasool\n\nFIRST NETWORK\nManage networks > Add. Select the page, then Map > Add tower. Devices > Add device: enter name and management IP, select tower, save. Start monitoring. Selected page by default; Monitor all networks checks all active pages.\n\nRADIO / WAN\nWAN / Radio > select device > Configure adapter. Use a verified firmware profile and real OIDs/API fields. Ping is separate from wireless quality and Internet reachability. Missing measurements remain Unknown/Unavailable. Traffic rate is usage, not capacity. Controlled speed tests consume data; automatic tests are off by default.\n\nFIVE NETWORKS\nConfigure Windows interfaces and routes first. Page source IP selects the source where supported; gateway hints do not create routes. Overlapping subnets require separate routing/interface setup.\n\nCCTV\nSet HTTP/HTTPS management and optional RTSP endpoint. Service status is separate from ping; no continuous video preview.\n\nMOBILE\nSettings > Mobile HTTPS dashboard. Explicitly start the service, verify certificate fingerprint, then pair from a phone. Remote access requires your configured VPN.\n\nSAFETY / BACKUP\nSettings > Backup database. Credentials use Windows DPAPI and are not included in configuration exports. Licence manager belongs to the owner. This owner-evaluation build has no issuer key provisioned.\n\nTESTING\nReal Rocket firmware, physical Windows 10 and phone compatibility require field testing. See the packaged PROFESSIONAL_GUIDE for details.")
         layout.addWidget(text);layout.addWidget(button('Close',dialog.accept));dialog.exec()
 
     def reload(self):
@@ -521,9 +534,13 @@ class Window(PageControls,QMainWindow):
         self.page_picker.blockSignals(True);self.page_picker.clear()
         for p in pages:self.page_picker.addItem(p.name,p.id)
         self.page_picker.setCurrentIndex(self.page_picker.findData(self.page_id));self.page_picker.blockSignals(False)
-        self.devices=[d for d in self.store.devices() if d.page_id==self.page_id]
-        self.engine.devices=self.devices
-        self.requested &= {d.id for d in self.devices if d.enabled and d.host}
+        self.network_pages={p.id:p for p in self.store.pages()}
+        self.all_devices=[d for d in self.store.devices() if d.page_id in self.network_pages and not self.network_pages[d.page_id].archived]
+        self.devices=[d for d in self.all_devices if d.page_id==self.page_id]
+        from .network_paths import ambiguous_hosts
+        self.ambiguous_devices=ambiguous_hosts(self.all_devices,self.network_pages)
+        self.engine.devices=self.monitor_devices()
+        self.requested &= {d.id for d in self.monitor_devices() if d.enabled and d.host}
         current=self.station.currentText()
         self.station.blockSignals(True)
         self.station.clear()
@@ -583,12 +600,12 @@ class Window(PageControls,QMainWindow):
     def refresh_map(self,draw=True):
         if draw and hasattr(self,'map_page'):self.map_page.refresh()
         active={}
-        for d in self.devices:
+        for d in self.monitor_devices():
             state=self.state(d)
             if state=='Checking':state=self.states.get(d.id,'Unknown')
             if d.alerts and state in ('Warning','No reply') and self.alerted.get(d.id):
                 active[d.id]=self.alerted[d.id]
-        for d in self.devices:
+        for d in self.monitor_devices():
             r=self.measurements.latest.get(d.id,{})
             if d.enabled and d.alerts and d.id in self.telemetry_alerted and time.time()-r.get('at',0)<max(30,d.integration.get('poll_seconds',30)*3):active[d.id]=self.telemetry_alerted[d.id]
         self.buzzer.update(active)
@@ -601,7 +618,7 @@ class Window(PageControls,QMainWindow):
     def protect_active_alerts(self):
         saved=set(self.store.setting('active_incident_devices',[]))
         active=set(self.alerted)|set(self.telemetry_alerted)
-        for d in self.devices:
+        for d in self.monitor_devices():
             if d.id in active:saved.add(d.id)
             elif d.id in self.states or not d.enabled:saved.discard(d.id)
         value=sorted(saved)
@@ -799,7 +816,7 @@ class Window(PageControls,QMainWindow):
             self.start_button.setText('▶ Start monitoring')
             self.store.event('','application','Periodic monitoring stopped')
         else:
-            self.engine.devices=self.devices
+            self.engine.devices=self.monitor_devices()
             self.engine.start()
             self.measurements.enabled=True
             self.start_button.setText('■ Stop monitoring')
@@ -807,9 +824,9 @@ class Window(PageControls,QMainWindow):
         self.render_all()
 
     def ping_all(self):
-        self.requested.update(d.id for d in self.devices if d.enabled and d.host)
+        self.requested.update(d.id for d in self.monitor_devices() if d.enabled and d.host)
         self.drain()
-        for d in self.devices:self.measurements.submit(d)
+        for d in self.monitor_devices():self.measurements.submit(d)
 
     def ping_selected(self):
         d=self.selected()
@@ -824,6 +841,7 @@ class Window(PageControls,QMainWindow):
         if not d or not d.host or not d.enabled:
             QMessageBox.information(self,'Select a device','Select a configured enabled device first.')
             return
+        if self.monitor_all_enabled:self.monitor_all_box.setChecked(False)
         # Continuous selection uses an explicit scope. Start monitoring restores all devices.
         if self.engine.running and self.engine.devices==[d]:
             self.toggle()
@@ -836,7 +854,7 @@ class Window(PageControls,QMainWindow):
             self.render_all()
 
     def drain(self):
-        for d in self.devices:
+        for d in self.monitor_devices():
             if d.id in self.requested:
                 if d.id in self.engine.pending:
                     self.requested.discard(d.id)
@@ -845,10 +863,11 @@ class Window(PageControls,QMainWindow):
         self.busy()
 
     def busy(self):
-        self.statusBar().showMessage(f"{'Monitoring active' if self.engine.running else 'Periodic monitoring stopped'} • {len(self.engine.pending)} probes running • {len(self.requested)} queued")
+        scope='all networks' if self.monitor_all_enabled else 'selected page'
+        self.statusBar().showMessage(f"{'Monitoring active' if self.engine.running else 'Periodic monitoring stopped'} • {scope} • {len(self.engine.pending)} probes running • {len(self.requested)} queued")
 
     def result(self,id,snapshot,result):
-        current=next((d for d in self.devices if d.id==id),None)
+        current=next((d for d in self.monitor_devices() if d.id==id),None)
         if current is None or {k:v for k,v in asdict(current).items() if k not in ('map_x','map_y')}!={k:v for k,v in asdict(snapshot).items() if k not in ('map_x','map_y')}:
             return # Ignore an obsolete probe after edit/delete.
         previous=self.states.get(id,'Unknown')
@@ -885,6 +904,9 @@ class Window(PageControls,QMainWindow):
         self.request_render()
 
     def notify(self,id,name,message):
+        if self.monitor_all_enabled:
+            d=next((d for d in self.all_devices if d.id==id),None)
+            if d:name=self.network_pages[d.page_id].name+' / '+name
         self.store.event(id,'alert',name+': '+message)
         if self.notifications.isChecked() and QSystemTrayIcon.isSystemTrayAvailable():
             self.tray.showMessage('Zee Network Monitor',name+': '+message,QSystemTrayIcon.Information,5000)

@@ -89,10 +89,11 @@ class MapCanvas(QWidget):
             link_id=d.peer_id or d.parent
             if link_id not in points or d.id not in points:continue
             parent=next((a for a in self.devices if a.id==link_id),None)
+            if d.peer_id and parent and parent.peer_id==d.id and d.id>parent.id:continue
             if d.station_id and parent and parent.station_id==d.station_id:continue
             a,b=points[link_id],points[d.id]
             state=states[d.id]
-            color=COLORS[state] if state in ('Warning','No reply') else ('#28e3a0' if states.get(d.parent) in ('Online','Warning') and state=='Online' else '#607c8c')
+            color=COLORS[state] if state in ('Warning','No reply') else ('#28e3a0' if states.get(link_id) in ('Online','Warning') and state=='Online' else '#607c8c')
             path=QPainterPath(a);path.cubicTo(QPointF(a.x(),(a.y()+b.y())/2),QPointF(b.x(),(a.y()+b.y())/2),b)
             if 'radio' in d.kind:color=self.radio_color(d,state).name()
             pen=QPen(QColor(color),2.5)

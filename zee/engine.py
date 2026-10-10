@@ -35,6 +35,7 @@ class Engine(QObject):
     def __init__(self, parent=None, probe_fn=probe):
         super().__init__(parent)
         self.probe_fn = probe_fn
+        self.prepare_probe = None
         self.pool = QThreadPool(self)
         self.pool.setMaxThreadCount(8)
         self.pending = {}
@@ -54,7 +55,8 @@ class Engine(QObject):
     def submit(self, d):
         if self.closing or not d.enabled or not d.host or d.id in self.pending or len(self.pending)>=self.limit:
             return False
-        worker = Worker(d,self.probe_fn,self.retries,self.retry_delay)
+        fn=self.prepare_probe(d,self.probe_fn) if self.prepare_probe else self.probe_fn
+        worker = Worker(d,fn,self.retries,self.retry_delay)
         worker.generation=self.generation
         worker.signals.done.connect(self.complete)
         self.pending[d.id] = worker

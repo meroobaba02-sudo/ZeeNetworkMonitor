@@ -26,6 +26,11 @@ class WorkspaceStore:
     def save_page(self,p):
         p.validate()
         self.db.execute('INSERT OR REPLACE INTO pages VALUES(?,?)',(p.id,json.dumps(asdict(p))));self.db.commit()
+    def save_pages(self,pages):
+        for p in pages:p.validate()
+        if len({p.id for p in pages})!=len(pages):raise ValueError('Duplicate network identifiers.')
+        with self.db:
+            for p in pages:self.db.execute('INSERT OR REPLACE INTO pages VALUES(?,?)',(p.id,json.dumps(asdict(p))))
     def export_page(self,id):
         p=next(p for p in self.pages() if p.id==id)
         devices=[]

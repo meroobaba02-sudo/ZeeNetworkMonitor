@@ -1,4 +1,4 @@
-# Zee Network Monitor Professional 0.4.7 — owner evaluation preview
+# Zee Network Monitor Professional 0.4.8 — owner evaluation preview
 
 Created by Zeeshan Rasool
 
@@ -6,7 +6,7 @@ Created by Zeeshan Rasool
 
 Setup EXE double-click karen. Desktop aur Start Menu shortcut banenge. Admin/Python/Git install karna zaroori nahi. Purana app pehle close karen. Data %LOCALAPPDATA%\ZeeNetworkMonitor mein rehta hai; upgrade/uninstall ise delete nahi karta. Portable ZIP alternative hai: Extract All, phir ZeeNetworkMonitor.exe; poora folder saath rakhen.
 
-1. Manage networks → Add network. Apna naam den. Har network ka alag page ban sakta hai. Sirf selected page monitor hota hai; page badalne par Start monitoring dobara dabayen.
+1. Manage networks → Add network. Apna naam den. Har network ka alag page ban sakta hai. Default selected-page mode mein page badalne par monitoring rukti hai. Monitor all networks tick karen to verified active pages ikathay chalte hain aur page sirf view change karta hai.
 2. Router: Add device → naam/IP/type Router. Management URL optional, jaise http://device-ip/ (apna IP dalen). Double-click se browser aur details khulte hain. Browser login manually karen.
 3. Tower: Add tower → naam → Save. Har naya tower alag position par aata hai. Name box drag karen. Tower button se rename/GPS/notes. Map options → Remove selected tower radios ko standalone rakhta hai.
 4. Rocket M5: tower select → Add radio. IP, left/right dish side, role aur wireless peer configure karen. Ping aur wireless quality alag hain. Gray quality ka matlab telemetry Unknown hai. Double-click → Secure settings se password/read-only SNMP community save karen.
@@ -21,7 +21,7 @@ Add/edit/rename/reorder/duplicate/archive/restore/delete/export/import pages are
 
 A page is not a network isolation boundary. Source IP binds Windows IPv4 ICMP via IcmpSendEcho2Ex, IPv6 system ping, and HTTP/TCP sockets. It must be an address assigned to the laptop. Literal matching-family targets are required for source-bound ICMP. Adapter name/gateway are notes: Windows routes are not modified. When adapter/gateway is entered but not verified, new probes are blocked. Overlapping subnets require a correctly configured route/VPN or separate agents (agents not included). SNMP source binding is not supported and is explicitly blocked if a source IP is selected. Do not merge separate production networks on an unmanaged switch merely to monitor them.
 
-Only selected page is polled; other mobile pages say Not monitored. Schedules are per device; current page can be manually checked or started/stopped. Concurrent monitoring of different pages is not implemented. Existing ping and buzzer controls are preserved. Ping no-reply does not prove a physical fault.
+Default selected-page mode leaves other mobile pages Not monitored. Optional Monitor all networks polls active pages together using shared bounded pools; mobile shows their actual fresh results. Each page requires operator path verification in this mode. Schedules remain per device. Existing ping and buzzer controls are preserved. Ping no-reply does not prove a physical fault.
 
 ## Wireless adapters and alignment
 
@@ -103,3 +103,7 @@ Source-bound labels cover IPv4/IPv6 and page-level source selection. Pending dat
 
 ## v0.4.7 lightweight monitoring and retention
 Settings now offers detailed retention in hours (48 on a fresh install), automatic background cleanup, manual cleanup and last-result/error status. Explicit legacy retention customization remains intact. Advanced monitoring/history controls bounded ping/service pools, optional ping retries/delay, minimum ping interval, screen refresh, alert retention (90 days; 0 keeps alerts), database disk-warning threshold and archive-before-cleanup. A threshold is a warning, not a hard cap: only expired records are deleted. Archives are full database snapshots, exclude external credential/licence/mobile sidecars, consume extra disk and remain until removed manually. Security/audit/licence records, pinned events and persisted unresolved-device alerts are protected. Alerts > Pin/Unpin selected protects important events. Formal incident lifecycle follows in Phase 6. Minimize continues monitoring by default; optional pause resumes the prior periodic scope. Running network calls retain their existing bounded deadlines; Stop interrupts retry waits. Extra retries produce one final logical-check result, not packet-level loss statistics. Device table pages contain 200 records; history graph/outage list loads latest 1,000 samples and WAN day/session statistics use latest 5,000 records with explicit labels. Full exports remain available. CPU/RAM show this process only; 100% CPU is one core. Synthetic Windows/Linux measurements are not old-laptop or physical-network proof. Details and acceptance: PHASE3_PERFORMANCE.md.
+
+
+## v0.4.8 multi-network setup
+Network setup / paths provides named network rows, real Windows IP/adapter inventory, source selection, optional gateway reference, literal test targets, operator attestation and asynchronous reachability/route inspection. Save stops monitoring and invalidates old route snapshots and WAN attestations when paths change. Check results never automatically tick Operator verified. Same target across pages is blocked in all-network mode until sources are disjoint and paths operator-verified; distinct sources alone still do not prove WAN independence. Source snapshots are prepared on the GUI thread before worker submission. All-network mode preserves results across view changes; single-page mode retains previous stop/isolation behavior. Towers, history and peer links remain page-scoped. Connect tower radios creates reciprocal peers, optional upstream parent, and rejects cycles or cross-page links. SNMP source binding is still unsupported; use verified non-overlapping management routing or supported HTTPS adapters. No IPs, routes, VLANs, VPNs or firewall changes are applied. Details: PHASE4_NETWORKS.md.

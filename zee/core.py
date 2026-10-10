@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass, field
 from .workspaces import WorkspaceStore,NetworkPage
 from pathlib import Path
 
-VERSION = '0.4.7'
+VERSION = '0.4.8'
 TYPES = ['WAN / Internet', 'Rocket M5 / wireless radio', 'Router', 'Switch', 'CCTV / NVR / camera', 'Server / monitoring agent', 'Other']
 
 
@@ -219,6 +219,36 @@ class Store(WorkspaceStore):
                     d.next_hop = '' if d.next_hop == id else d.next_hop
                     self.db.execute('UPDATE devices SET data=? WHERE id=?', (json.dumps(asdict(d)), d.id))
             self.event(id, 'config', 'Device deleted; history retained')
+
+    def link_radios(self, first, second, upstream=False):
+        from dataclasses import replace
+        devices={d.id:d for d in self.devices()}
+        if first==second or first not in devices or second not in devices:raise ValueError('Choose two different existing devices.')
+        a,b=devices[first],devices[second]
+        if a.page_id!=b.page_id:raise ValueError('Radio links must stay within one network page.')
+        if a.peer_id not in ('',b.id) or b.peer_id not in ('',a.id):raise ValueError('Remove the existing peer link first.')
+        if any(d.id not in (a.id,b.id) and d.peer_id in (a.id,b.id) for d in devices.values()):raise ValueError('Another device refers to this peer. Remove that existing link first.')
+        a=replace(a,peer_id=b.id);b=replace(b,peer_id=a.id,parent=a.id if upstream else b.parent)
+        devices[a.id],devices[b.id]=a,b
+        for d in (a,b):
+            d.validate();seen={d.id};cursor=d.parent
+            while cursor:
+                if cursor in seen:raise ValueError('Upstream links must not form a cycle.')
+                seen.add(cursor);cursor=devices[cursor].parent
+        with self.db:
+            for d in (a,b):self.db.execute('UPDATE devices SET data=? WHERE id=?',(json.dumps(asdict(d)),d.id))
+        self.event(a.id,'config','Radio peer link saved: '+a.name+' / '+b.name)
+
+    def unlink_radios(self,id):
+        from dataclasses import replace
+        devices={d.id:d for d in self.devices()}
+        if id not in devices:raise ValueError('Device no longer exists.')
+        a=devices[id];peer=devices.get(a.peer_id)
+        updates=[replace(a,peer_id='',parent='' if peer and a.parent==peer.id else a.parent)]
+        if peer and peer.peer_id==a.id:updates.append(replace(peer,peer_id='',parent='' if peer.parent==a.id else peer.parent))
+        with self.db:
+            for d in updates:self.db.execute('UPDATE devices SET data=? WHERE id=?',(json.dumps(asdict(d)),d.id))
+        self.event(a.id,'config','Radio peer link removed; unrelated parent links retained')
 
     def event(self, device, kind, message, at=None):
         self.db.execute('INSERT INTO events(device,at,kind,message) VALUES(?,?,?,?)', (device, time.time() if at is None else at, kind, message))
