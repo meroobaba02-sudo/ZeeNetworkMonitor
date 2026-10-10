@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass, field
 from .workspaces import WorkspaceStore,NetworkPage
 from pathlib import Path
 
-VERSION = '0.4.0'
+VERSION = '0.4.1'
 TYPES = ['WAN / Internet', 'Rocket M5 / wireless radio', 'Router', 'Switch', 'CCTV / NVR / camera', 'Server / monitoring agent', 'Other']
 
 
@@ -232,8 +232,13 @@ class Store(WorkspaceStore):
         r = self.db.execute('SELECT COUNT(*) n, COALESCE(SUM(success),0) ok, AVG(CASE WHEN success=1 THEN latency END) latency, MAX(CASE WHEN success=1 THEN at END) last_ok, MAX(CASE WHEN success=0 THEN at END) last_fail FROM samples WHERE device=? AND at>=?', (device,since)).fetchone()
         return dict(r) | {'loss': 100*(r['n']-r['ok'])/r['n'] if r['n'] else None, 'uptime': 100*r['ok']/r['n'] if r['n'] else None}
 
-    def events(self, device='', since=0, until=float('inf'), search='', limit=1000):
-        return list(self.db.execute('SELECT * FROM events WHERE (?="" OR device=?) AND at>=? AND at<=? AND instr(lower(message || kind),lower(?))>0 ORDER BY at DESC,id DESC LIMIT ?', (device,device,since,until,search,limit)))
+    def events(self, device='', since=0, until=float('inf'), search='', limit=1000, scope=None):
+        clause='';params=[device,device,since,until,search]
+        if scope is not None:
+            if not scope:return []
+            clause=' AND device IN ('+','.join('?' for _ in scope)+')';params.extend(scope)
+        params.append(limit)
+        return list(self.db.execute('SELECT * FROM events WHERE (?="" OR device=?) AND at>=? AND at<=? AND instr(lower(message || kind),lower(?))>0'+clause+' ORDER BY at DESC,id DESC LIMIT ?',params))
 
     def setting(self, key, default=None):
         r = self.db.execute('SELECT data FROM settings WHERE key=?', (key,)).fetchone()

@@ -284,7 +284,8 @@ class Window(PageControls,QMainWindow):
         layout.addLayout(head)
         self.summary=QLabel()
         self.summary.setObjectName('card')
-        self.summary.hide()
+        self.summary.setWordWrap(True)
+        layout.addWidget(self.summary)
         self.tabs=QTabWidget()
         self.tabs.tabBar().hide()
         content=QHBoxLayout()
@@ -422,6 +423,8 @@ class Window(PageControls,QMainWindow):
         tools=QHBoxLayout()
         self.event_device=QComboBox()
         self.event_device.currentIndexChanged.connect(self.render_events)
+        self.event_tower=QComboBox()
+        self.event_tower.currentIndexChanged.connect(self.render_events)
         self.event_search=QLineEdit()
         self.event_search.setPlaceholderText('Search event text / type…')
         self.event_search.textChanged.connect(self.render_events)
@@ -431,7 +434,7 @@ class Window(PageControls,QMainWindow):
             widget.setCalendarPopup(True)
             widget.setDisplayFormat('yyyy-MM-dd HH:mm')
             widget.dateTimeChanged.connect(self.render_events)
-        for w in (self.event_device,self.event_search,self.event_from,self.event_to):
+        for w in (self.event_device,self.event_tower,self.event_search,self.event_from,self.event_to):
             tools.addWidget(w)
         tools.addWidget(button('Export events',self.export_events))
         layout.addLayout(tools)
@@ -462,6 +465,7 @@ class Window(PageControls,QMainWindow):
             form.addRow(w)
         form.addRow('History retention (days)',self.retention)
         form.addRow(button('Test buzzer (1 second)',self.test_buzzer))
+        form.addRow(button('Help / About',self.help_about))
         form.addRow(button('Save settings',self.save_settings,True))
         form.addRow(button('Backup database',self.backup))
         form.addRow(button('Restore backup and close',self.restore_database))
@@ -472,6 +476,12 @@ class Window(PageControls,QMainWindow):
         info.setWordWrap(True)
         form.addRow(info)
         self.tabs.addTab(page,'Settings & scope')
+
+    def help_about(self):
+        dialog=QDialog(self);dialog.setWindowTitle('Help / About');dialog.resize(700,520)
+        layout=QVBoxLayout(dialog);text=QTextEdit();text.setReadOnly(True)
+        text.setPlainText(f"Zee Network Monitor {VERSION}\nCreated by Zeeshan Rasool\n\nFIRST NETWORK\nManage networks > Add. Select the page, then Map > Add tower. Devices > Add device: enter name and management IP, select tower, save. Start monitoring. Only the selected page is monitored.\n\nRADIO / WAN\nWAN / Radio > select device > Configure adapter. Use a verified firmware profile and real OIDs/API fields. Ping is separate from wireless quality and Internet reachability. Missing measurements remain Unknown/Unavailable. Traffic rate is usage, not capacity. Controlled speed tests consume data; automatic tests are off by default.\n\nFIVE NETWORKS\nConfigure Windows interfaces and routes first. Page source IP selects the source where supported; gateway hints do not create routes. Overlapping subnets require separate routing/interface setup.\n\nCCTV\nSet HTTP/HTTPS management and optional RTSP endpoint. Service status is separate from ping; no continuous video preview.\n\nMOBILE\nSettings > Mobile HTTPS dashboard. Explicitly start the service, verify certificate fingerprint, then pair from a phone. Remote access requires your configured VPN.\n\nSAFETY / BACKUP\nSettings > Backup database. Credentials use Windows DPAPI and are not included in configuration exports. Licence manager belongs to the owner. This owner-evaluation build has no issuer key provisioned.\n\nTESTING\nReal Rocket firmware, physical Windows 10 and phone compatibility require field testing. See the packaged PROFESSIONAL_GUIDE for details.")
+        layout.addWidget(text);layout.addWidget(button('Close',dialog.accept));dialog.exec()
 
     def reload(self):
         pages=[p for p in self.store.pages() if not p.archived]
@@ -499,6 +509,10 @@ class Window(PageControls,QMainWindow):
                 combo.addItem(d.name,d.id)
             combo.setCurrentIndex(max(0,combo.findData(previous)))
             combo.blockSignals(False)
+        previous=self.event_tower.currentData()
+        self.event_tower.blockSignals(True);self.event_tower.clear();self.event_tower.addItem('All towers','')
+        for tower in self.page_stations():self.event_tower.addItem(tower.name,tower.id)
+        self.event_tower.setCurrentIndex(max(0,self.event_tower.findData(previous)));self.event_tower.blockSignals(False)
         # Last check is displayed, but previous-session status is never treated as fresh.
         for d in self.devices:
             if d.id not in self.latest:
@@ -633,7 +647,8 @@ class Window(PageControls,QMainWindow):
         lookup={d.id:self.state(d) for d in self.devices}
         active_links=sum(1 for d in self.devices if d.parent and lookup.get(d.parent) in ('Online','Warning') and lookup[d.id] in ('Online','Warning'))
         avg=f'{sum(latencies)/len(latencies):.1f} ms' if latencies else '—'
-        self.summary.setText(f"Devices  {len(self.devices)}   |   Stations  {len({d.location for d in self.devices if d.location})}   |   Online  {all_states.count('Online')}   |   Warning  {all_states.count('Warning')}   |   No reply  {all_states.count('No reply')}   |   Other  {len(all_states)-sum(all_states.count(s) for s in ('Online','Warning','No reply'))}\nObserved active links  {active_links}   |   Failed checks (retained)  {failed}   |   Latest average latency  {avg}")
+        from .dashboard import dashboard_text
+        self.summary.setText(dashboard_text(self.devices,lookup,self.measurements.latest,self.measurements.speed_latest,len(self.page_stations()),self.alerted,self.telemetry_alerted,time.time()))
 
     def render_history(self):
         if not hasattr(self,'graph'):
@@ -659,8 +674,10 @@ class Window(PageControls,QMainWindow):
         self.outage_text.setPlainText('Observed no-reply intervals within selected window:\n'+'\n'.join(text) if text else 'No no-reply intervals observed in this window.')
 
     def event_rows(self,limit=1000):
-        ids={d.id for d in self.devices}|{s.id for s in self.page_stations()}
-        return [r for r in self.store.events(self.event_device.currentData() or '',self.event_from.dateTime().toSecsSinceEpoch(),self.event_to.dateTime().toSecsSinceEpoch(),self.event_search.text(),limit) if r['device'] in ids]
+        tower=self.event_tower.currentData() or ''
+        ids=({d.id for d in self.devices if d.station_id==tower}|{tower}) if tower else {d.id for d in self.devices}|{s.id for s in self.page_stations()}
+        # Apply page/tower scope before the limit, so busy unrelated pages cannot hide matches.
+        return self.store.events(self.event_device.currentData() or '',self.event_from.dateTime().toSecsSinceEpoch(),self.event_to.dateTime().toSecsSinceEpoch(),self.event_search.text(),limit,scope=sorted(ids))
 
     def render_events(self):
         if not hasattr(self,'event_table'):

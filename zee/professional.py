@@ -155,8 +155,14 @@ class ProfessionalPanel(QWidget):
     def history(self):
         d=self.device()
         if not d:return
-        rows=self.w.store.measurements(d.id,time.time()-86400);values=[x.get('download_mbps') for x in rows];self.graph.values=values;self.graph.update();valid=[v for v in values if v is not None]
-        self.summary.setText(('Last 24h measured download: min %.2f / average %.2f / max %.2f Mbps'%(min(valid),sum(valid)/len(valid),max(valid))) if valid else 'Speed unavailable. Configure a verified WAN method. Traffic rate measures usage, not available Internet capacity.')
+        from datetime import datetime
+        from .dashboard import speed_statistics
+        now=time.time();midnight=datetime.now().replace(hour=0,minute=0,second=0,microsecond=0).timestamp()
+        rows=self.w.store.measurements(d.id,min(midnight,self.session_started),-1)
+        today=[x for x in rows if x['at']>=midnight];session=[x for x in rows if x['at']>=self.session_started]
+        self.graph.values=[x.get('download_mbps') for x in today[-1000:]];self.graph.update()
+        self.summary.setText('Today (local): '+speed_statistics(today)+'\nThis app session: '+speed_statistics(session)+'\nMeasured sample statistics; traffic usage and controlled throughput are separate. Graph: latest 1,000 samples.')
+
     def refresh(self):
         selected=self.device();self.table.blockSignals(True);self.table.setRowCount(0);rank=[]
         for d in self.w.devices:
