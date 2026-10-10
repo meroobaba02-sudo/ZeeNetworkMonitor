@@ -21,8 +21,11 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           python -m compileall -q main.py zee tests admin
+          if ($LASTEXITCODE -ne 0) { throw "Syntax checks failed" }
           python -m pytest -q --junitxml=windows-tests.xml
+          if ($LASTEXITCODE -ne 0) { throw "Tests failed" }
           python -c "from zee.regionmap import load; load('assets/region_map.json.gz')"
+          if ($LASTEXITCODE -ne 0) { throw "Map asset check failed" }
       - name: Record synthetic scheduling, UI and cleanup measurements
         env:
           QT_QPA_PLATFORM: offscreen
@@ -30,7 +33,9 @@ jobs:
       - name: Build customer application and separate owner manager
         run: |
           python -m PyInstaller --clean --noconfirm ZeeNetworkMonitor.spec
+          if ($LASTEXITCODE -ne 0) { throw "Customer EXE build failed" }
           python -m PyInstaller --clean --noconfirm ZeeLicenseManager.spec
+          if ($LASTEXITCODE -ne 0) { throw "Owner utility build failed" }
       - name: Frozen application and owner-manager smoke tests
         env:
           QT_QPA_PLATFORM: offscreen

@@ -1,7 +1,7 @@
 # Phase 6 — evidence-based fault localization and incidents (v0.4.10)
 
 ## Delivered
-Existing ping, buzzer, telemetry, topology, alerts, source selection, retention and installer flows are preserved. New modules separate pure evidence evaluation from GUI-owned incident persistence.
+Existing ping, buzzer, telemetry, topology, alerts, source selection, retention and installer flows are preserved. A Windows cold-start adapter-inventory timeout was observed in CI; its bounded read-only background deadline is now 20 seconds, with an understandable retry error. Multi-command test/build steps now check each native exit code immediately; the existing JUnit package guard also remains. New modules separate pure evidence evaluation from GUI-owned incident persistence.
 
 - Topology & diagnosis counts only enabled devices with fresh threshold-reaching ICMP failures. Unknown, stale, disabled and infrastructure probe errors do not become physical fault evidence. Fresh service responses contradict total device unreachability despite ICMP failure.
 - A possible common upstream issue needs an observed failing hop plus at least two recently failing descendants (within 60 seconds of that hop), with no fresh replying descendants. Mixed branches and isolated endpoints retain low-confidence possibilities. Missing children are not listed as affected. Parent links are configured dependencies, not discovered physical facts. Cross-page data is never grouped.
@@ -33,7 +33,7 @@ Full local suite: 155 passed, 3 Windows-only skips. Compileall and real applicat
 
 Synthetic 10/50/100/250-device benchmark: all checks 0.150/0.854/1.715/4.538 seconds; max UI heartbeat gap 60.4/57.9/78.5/138.3 ms; cumulative process working set 84.4/93.1/102.9/114.1 MB; peak ping workers 8. Cleanup of 25,000 expired rows used 0.027/0.024/0.023/0.026 worker seconds. Incident observations use one indexed active-row query and no per-outcome lookup queries; unchanged evidence causes no update. Network work remains background/bounded. SQLite persistence and some history queries still run on the GUI thread; old-laptop/large-active-history performance is not guaranteed by this short synthetic run.
 
-Changed runtime: zee/faults.py, zee/incidents.py, zee/incident_dialog.py, zee/core.py, zee/gui.py, zee/monitoring.py, zee/recovery.py, zee/retention.py. New tests: tests/test_phase6_incidents.py. Version/build/installer/user guides updated; PHASE6_INCIDENTS.md ships in the portable package.
+Changed runtime: zee/faults.py, zee/incidents.py, zee/incident_dialog.py, zee/core.py, zee/gui.py, zee/monitoring.py, zee/recovery.py, zee/retention.py, zee/network_paths.py. New tests: tests/test_phase6_incidents.py. Version/build/installer/user guides updated; PHASE6_INCIDENTS.md ships in the portable package.
 
 ## Limits / acceptance
 Verified: implemented classifications/lifecycle against controlled fixtures and regression tests. Blocked/not performed: real multi-hop outages, actual Rocket/airOS metrics, five real WAN paths, physical Windows 10/speakers/DPI, long-duration pilot and calibrated false-positive/negative confidence. No remote agent, physical-fault confirmation, general Internet certification or guessed metrics. Historic topology-only diagnoses are superseded in the runtime GUI by fresh-evidence evaluation.

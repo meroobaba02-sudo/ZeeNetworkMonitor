@@ -21,7 +21,8 @@ def normalize_interfaces(payload):
 def interfaces():
     if os.name=='nt':
         command="Get-NetIPAddress | Select-Object IPAddress,InterfaceAlias,InterfaceIndex,PrefixLength | ConvertTo-Json -Compress"
-        result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',command],capture_output=True,text=True,errors='replace',timeout=8,creationflags=subprocess.CREATE_NO_WINDOW)
+        try:result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',command],capture_output=True,text=True,errors='replace',timeout=20,creationflags=subprocess.CREATE_NO_WINDOW)
+        except subprocess.TimeoutExpired:raise ValueError('Windows adapter inventory timed out; retry Read laptop IPs when Windows is ready.') from None
         if result.returncode:raise ValueError('Windows adapter inventory unavailable. Enter a local IP manually.')
         return normalize_interfaces(json.loads(result.stdout.lstrip('\ufeff')))
     # Development fixture only; do not invent an inventory of the Windows laptop.
