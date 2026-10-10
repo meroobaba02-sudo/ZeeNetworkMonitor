@@ -88,7 +88,7 @@ class DeviceDetails(QDialog):
         self.events=QTextEdit();self.events.setReadOnly(True);self.events.setMaximumHeight(120);layout.addWidget(self.events)
         self.feedback=QCheckBox('Alignment sound when measured quality improves (technician adjusts dish)');layout.addWidget(self.feedback)
         row=QHBoxLayout();layout.addLayout(row)
-        for title,fn in [('Open management',self.open),('Refresh / Test connection',self.refresh_now),('Secure settings',self.settings),('Open stream',self.stream)]:
+        for title,fn in [('Open management',self.open),('Refresh / Test connection',self.refresh_now),('Secure settings',self.settings),('Camera setup',self.camera_setup),('Open stream',self.stream)]:
             b=QPushButton(title);b.clicked.connect(fn);row.addWidget(b)
         self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(1500);self.refresh()
     def device(self):return next((d for d in self.w.devices if d.id==self.id),None)
@@ -103,6 +103,11 @@ class DeviceDetails(QDialog):
     def refresh_now(self):
         d=self.device()
         if d:self.w.requested.add(d.id);self.w.drain();self.w.measurements.submit(d)
+    def camera_setup(self):
+        d=self.device()
+        if d:
+            from .cctv import CameraDialog
+            CameraDialog(self.w,d).exec()
     def settings(self):
         d=self.device()
         if d:IntegrationDialog(self.w,d).exec()
@@ -114,6 +119,9 @@ class DeviceDetails(QDialog):
         peer=next((a for a in self.w.devices if a.id==d.peer_id or a.id==d.parent),None)
         a=next((s for s in self.w.store.stations() if s.id==d.station_id),None);b=next((s for s in self.w.store.stations() if peer and s.id==peer.station_id),None);geo=distance_bearing(a,b)
         lines=[d.name+' • '+d.host,'Ping: '+self.w.state(d),'Wireless quality: '+label+(f' ({score}/10)' if score is not None else ''),'Peer: '+(peer.name if peer else 'Not assigned'),'Service: '+r.get('service','Not configured'),'Internet: '+r.get('internet','Not configured')]
+        if d.kind.startswith('CCTV'):
+            from .cctv import camera_health
+            lines.append('Camera service health: '+camera_health(d,r,time.time()))
         lines+=['Last collection: '+(time.strftime('%H:%M:%S',time.localtime(r['at'])) if r else 'Never')+(' • STALE' if r and age>max(30,d.integration.get('poll_seconds',30)*3) else '')]
         lines+=[f'{k}: {m.get(k,"Unavailable")}' for k in ['signal_dbm','noise_dbm','snr_db','tx_ccq','rx_ccq','tx_mbps','rx_mbps','frequency_mhz','channel_width_mhz','uptime_s','ethernet_up','wireless_up','cpu_pct','memory_pct']]
         if geo:lines.append(f'Distance {geo[0]:.2f} km • initial bearing {geo[1]:.1f}° • elevation guidance unavailable')

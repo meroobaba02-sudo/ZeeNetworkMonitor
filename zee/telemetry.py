@@ -2,14 +2,14 @@
 import math,re,time,asyncio,json,base64
 from .connections import request,validate_url,service_check,connection
 METRICS={'signal_dbm','noise_dbm','snr_db','tx_ccq','rx_ccq','tx_mbps','rx_mbps','frequency_mhz','channel_width_mhz','uptime_s','ethernet_up','wireless_up','cpu_pct','memory_pct','in_octets','out_octets','counter_epoch'}
-DEFAULT_PROFILE={'method':'none','poll_seconds':30,'firmware_verified':False,'oids':{},'fields':{},'wan_verified':False,'internet_url':'','internet_marker':'','speed_url':'','speed_mb':1,'speed_seconds':5,'daily_mb':10,'automatic_speed':False,'speed_interval':900,'min_download_mbps':0,'loss_warning_pct':10,'signal_good':-60,'signal_poor':-80,'ccq_good':90,'ccq_poor':50,'snmp_version':'2c','rate_quality_enabled':False,'rate_good_mbps':100,'rate_poor_mbps':10,'internet_latency_warning_ms':1500}
+DEFAULT_PROFILE={'method':'none','poll_seconds':30,'firmware_verified':False,'oids':{},'fields':{},'wan_verified':False,'internet_url':'','internet_marker':'','speed_url':'','speed_mb':1,'speed_seconds':5,'daily_mb':10,'automatic_speed':False,'speed_interval':900,'min_download_mbps':0,'loss_warning_pct':10,'signal_good':-60,'signal_poor':-80,'ccq_good':90,'ccq_poor':50,'snmp_version':'2c','rate_quality_enabled':False,'rate_good_mbps':100,'rate_poor_mbps':10,'internet_latency_warning_ms':1500,'service_alerts':False}
 
 def validate_profile(p):
     if not isinstance(p,dict):raise ValueError('Integration settings must be an object.')
     if set(p)-set(DEFAULT_PROFILE)-{'url','snmp_port','allow_v2c','rate_cap_kbps'}:raise ValueError('Unknown integration setting; secrets belong in the protected credential fields.')
     if p.get('method','none') not in ('none','snmp','https-json'):raise ValueError('Unsupported adapter.')
     if p.get('snmp_version','2c') not in ('1','2c'):raise ValueError('SNMP version must be 1 or 2c.')
-    for key in ('rate_quality_enabled','allow_v2c'):
+    for key in ('rate_quality_enabled','allow_v2c','service_alerts'):
         if key in p and not isinstance(p[key],bool):raise ValueError(key+' must be true or false.')
     if p.get('rate_poor_mbps',10)>=p.get('rate_good_mbps',100):raise ValueError('Good rate must be above poor rate.')
     for key in ('url','internet_url','speed_url'):

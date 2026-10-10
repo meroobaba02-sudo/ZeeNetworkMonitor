@@ -77,6 +77,10 @@ class Measurements(QObject):
         if d.wan or d.kind.startswith('WAN'):
             state,reason=wan_health(d,self.window.state(d),latest,speed_row,now)
             if state in ('Offline','Degraded'):incidents.append(reason)
+        if d.kind.startswith('CCTV') and d.integration.get('service_alerts'):
+            from .cctv import camera_health
+            service=camera_health(d,latest,now)
+            if service.startswith('Service unavailable'):incidents.append(service)
         incident='; '.join(incidents)
         prior=self.window.telemetry_alerted.get(d.id,'')
         if incident and d.alerts:

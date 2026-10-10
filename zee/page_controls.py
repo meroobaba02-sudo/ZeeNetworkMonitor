@@ -116,8 +116,16 @@ class PageControls:
         if not server:return
         import time
         from .telemetry import quality
-        pages=self.store.pages();names={p.id:p.name for p in pages};towers={s.id:s.name for s in self.store.stations()};devices=[]
-        for d in self.store.devices():
-            r=self.measurements.latest.get(d.id,{}) if d.page_id==self.page_id else {};age=time.time()-r.get('at',0);fresh=age<=max(30,d.integration.get('poll_seconds',30)*3)
-            devices.append({'name':d.name,'page':d.page_id,'network':names.get(d.page_id,''),'tower':towers.get(d.station_id,''),'status':self.state(d) if d.page_id==self.page_id else 'Not monitored','quality':quality(r.get('metrics',{}),d.integration,age)[1],'internet':r.get('internet','Unknown') if fresh else 'Unknown','download':str(round(r['download_mbps'],2))+' Mbps (traffic)' if fresh and 'download_mbps' in r else 'Unavailable','upload':str(round(r['upload_mbps'],2))+' Mbps (traffic)' if fresh and 'upload_mbps' in r else 'Unavailable'})
-        server.update({'at':time.time(),'pages':[{'id':p.id,'name':p.name} for p in pages if not p.archived],'devices':devices,'events':[r['message'] for r in self.store.events(limit=20) if r['kind']=='alert']})
+        from .wan import wan_health
+        from .cctv import camera_health
+        now=time.time();pages=self.store.pages();names={p.id:p.name for p in pages};towers={s.id:s.name for s in self.store.stations()};devices=[]
+        inventory=[d for d in self.store.devices() if any(p.id==d.page_id and not p.archived for p in pages)]
+        for d in inventory:
+            selected=d.page_id==self.page_id;r=self.measurements.latest.get(d.id,{}) if selected else {};speed=self.measurements.speed_latest.get(d.id,{}) if selected else {};age=now-r.get('at',0);fresh=age<=max(30,d.integration.get('poll_seconds',30)*3)
+            speed_fresh=speed and now-speed.get('at',0)<=max(60,d.integration.get('speed_interval',900));rate=speed if speed_fresh else r;rate_fresh=speed_fresh or fresh
+            state=self.state(d) if selected else 'Not monitored'
+            health=wan_health(d,state,r,speed,now)[0] if d.wan or d.kind.startswith('WAN') else 'Not a WAN'
+            service=camera_health(d,r,now) if d.kind.startswith('CCTV') else 'Not a camera'
+            devices.append({'id':d.id,'host':d.host,'name':d.name,'page':d.page_id,'network':names.get(d.page_id,''),'tower_id':d.station_id,'tower':towers.get(d.station_id,''),'status':state,'quality':quality(r.get('metrics',{}),d.integration,age)[1],'internet':r.get('internet','Unknown') if fresh else 'Unknown','wan_health':health,'service':service,'download':f"{rate['download_mbps']:.2f} Mbps ({rate.get('rate_kind','measurement')})" if rate_fresh and 'download_mbps' in rate else 'Unavailable','upload':f"{r['upload_mbps']:.2f} Mbps (traffic)" if fresh and 'upload_mbps' in r else 'Unavailable'})
+        rows=self.store.events(since=now-86400,limit=100,scope=[d.id for d in inventory])
+        server.update({'at':now,'pages':[{'id':p.id,'name':p.name} for p in pages if not p.archived],'devices':devices,'events':[{'device':r['device'],'message':r['message'],'time':time.strftime('%H:%M:%S',time.localtime(r['at']))} for r in rows]})
