@@ -36,7 +36,13 @@ class PageControls:
                 p=NetworkPage(id=str(uuid.uuid4()),name='New network',order=len(self.store.pages())) if action==actions[0] else page
                 dialog=PageDialog(self,p)
                 if dialog.exec()!=QDialog.Accepted:return
-                self.store.save_page(dialog.value())
+                updated=dialog.value()
+                if action==actions[1] and (updated.source_ip,updated.interface_hint,updated.gateway_hint)!=(page.source_ip,page.interface_hint,page.gateway_hint):
+                    updated=replace(updated,routing_verified=False)
+                    for device in self.store.devices():
+                        if device.page_id==page.id and device.integration.get('wan_verified'):
+                            self.store.save(replace(device,integration=device.integration|{'wan_verified':False}))
+                self.store.save_page(updated)
             elif action==actions[2]:self.store.import_page(self.store.export_page(page.id),page.name+' (copy)')
             elif action in actions[3:5]:
                 pages=self.store.pages();i=next(i for i,p in enumerate(pages) if p.id==page.id);j=i+(-1 if action==actions[3] else 1)

@@ -138,11 +138,12 @@ class ProfessionalPanel(QWidget):
         title=QLabel('WAN / SERVICES / WIRELESS');layout.addWidget(title)
         self.ranking=QLabel('No independently measured download tests yet');self.ranking.setWordWrap(True);layout.addWidget(self.ranking)
         self.session_started=time.time()
-        self.table=QTableWidget(0,7);self.table.setHorizontalHeaderLabels(['Device','Ping','Internet / service','Download Mbps','Upload Mbps','Method / freshness','Wireless quality']);self.table.setSelectionBehavior(QTableWidget.SelectRows);self.table.setEditTriggers(QTableWidget.NoEditTriggers);layout.addWidget(self.table)
+        self.table=QTableWidget(0,11);self.table.setHorizontalHeaderLabels(['Device','Router ping','Internet / service','WAN health','Download Mbps','Upload Mbps','HTTPS latency (ms)','Method / freshness','Wireless quality','Router loss (recent samples)','Last Internet success']);self.table.setSelectionBehavior(QTableWidget.SelectRows);self.table.setEditTriggers(QTableWidget.NoEditTriggers);layout.addWidget(self.table)
         self.summary=QLabel();self.summary.setWordWrap(True);layout.addWidget(self.summary)
+        self.history_method=QComboBox();self.history_method.addItems(['Controlled download throughput','Interface traffic estimate']);self.history_method.currentIndexChanged.connect(self.history);layout.addWidget(self.history_method)
         self.graph=MetricGraph();layout.addWidget(self.graph)
         row=QHBoxLayout();layout.addLayout(row)
-        for title,fn in [('Device details',self.details),('Configure adapter',self.configure),('Refresh measurements',self.poll),('Test Speed Now',self.speed)]:
+        for title,fn in [('Device details',self.details),('Configure adapter',self.configure),('WAN setup / routing',self.wan_setup),('Refresh measurements',self.poll),('Test Speed Now',self.speed)]:
             b=QPushButton(title);b.clicked.connect(fn);row.addWidget(b)
         self.table.itemSelectionChanged.connect(self.history)
         self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(2000)
@@ -155,6 +156,11 @@ class ProfessionalPanel(QWidget):
     def configure(self):
         d=self.device()
         if d:IntegrationDialog(self.w,d).exec()
+    def wan_setup(self):
+        d=self.device()
+        if d:
+            from .wan_dialog import WanDialog
+            WanDialog(self.w,d).exec()
     def poll(self):
         d=self.device()
         if d:self.w.measurements.submit(d)
@@ -172,7 +178,9 @@ class ProfessionalPanel(QWidget):
         now=time.time();midnight=datetime.now().replace(hour=0,minute=0,second=0,microsecond=0).timestamp()
         rows=self.w.store.measurements(d.id,min(midnight,self.session_started),-1)
         today=[x for x in rows if x['at']>=midnight];session=[x for x in rows if x['at']>=self.session_started]
-        self.graph.values=[x.get('download_mbps') for x in today[-1000:]];self.graph.update()
+        controlled=self.history_method.currentIndex()==0
+        graph_rows=[x for x in today if x.get('rate_kind','').startswith('Controlled download')==controlled and 'download_mbps' in x]
+        self.graph.values=[x.get('download_mbps') for x in graph_rows[-1000:]];self.graph.update()
         self.summary.setText('Today (local): '+speed_statistics(today)+'\nThis app session: '+speed_statistics(session)+'\nMeasured sample statistics; traffic usage and controlled throughput are separate. Graph: latest 1,000 samples.')
 
     def refresh(self):
@@ -183,12 +191,21 @@ class ProfessionalPanel(QWidget):
             rate=speed if speed and time.time()-speed.get('at',0)<max(60,d.integration.get('speed_interval',900)) else r
             rate_stale=time.time()-rate.get('at',0)>max(60,d.integration.get('speed_interval',900) if rate is speed else d.integration.get('poll_seconds',30)*3)
             score,label=quality(r.get('metrics',{}),d.integration,time.time()-r.get('at',0))
-            if rate is speed and not rate_stale and 'download_mbps' in rate:rank.append((rate['download_mbps'],d.name))
-            vals=[d.name,self.w.state(d),'Unknown / stale' if stale else r.get('internet',r.get('service','Unknown')),str(round(rate['download_mbps'],2)) if 'download_mbps' in rate and not rate_stale else 'Unavailable',str(round(rate['upload_mbps'],2)) if 'upload_mbps' in rate and not rate_stale else 'Unavailable',rate.get('rate_kind','Not independently measurable'),label]
+            if rate is speed and not rate_stale and 'download_mbps' in rate and not d.integration.get('rate_cap_kbps'):rank.append((rate['download_mbps'],d.name))
+            from .wan import wan_health
+            health,reason=wan_health(d,self.w.state(d),r,speed,time.time()) if d.wan or d.kind.startswith('WAN') else ('—','Not a WAN device')
+            recent=self.w.store.samples(d.id,max(0,time.time()-300))[-30:]
+            loss=f'{100*sum(not x["success"] for x in recent)/len(recent):.1f}% ({len(recent)} samples)' if recent else 'Unavailable'
+            history=self.w.store.measurements(d.id,time.time()-86400,1000)
+            last_success=max((x['at'] for x in history if x.get('internet')=='Online'),default=None)
+            last_success_text=time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(last_success)) if last_success else 'None in latest 1,000 / 24h'
+            vals=[d.name,self.w.state(d),'Unknown / stale' if stale else r.get('internet',r.get('service','Unknown')),health,str(round(rate['download_mbps'],2)) if 'download_mbps' in rate and not rate_stale else 'Unavailable',str(round(rate['upload_mbps'],2)) if 'upload_mbps' in rate and not rate_stale else 'Unavailable',str(round(r['internet_latency_ms'],1)) if not stale and 'internet_latency_ms' in r else 'Unavailable',rate.get('rate_kind','Not independently measurable')+(' / STALE' if rate_stale else ''),label,loss,last_success_text]
             row=self.table.rowCount();self.table.insertRow(row)
             for c,v in enumerate(vals):
                 item=QTableWidgetItem(v)
                 if c==0:item.setData(Qt.UserRole,d.id)
+                if c==3:
+                    item.setToolTip(reason);item.setForeground(QColor({'Online':'#36d399','Degraded':'#fbbf24','Offline':'#fb7185','Unknown':'#9aacc0'}.get(health,'#9aacc0')))
                 self.table.setItem(row,c,item)
             if selected and selected.id==d.id:self.table.selectRow(row)
         if rank:

@@ -2,7 +2,7 @@
 import math,re,time,asyncio,json,base64
 from .connections import request,validate_url,service_check,connection
 METRICS={'signal_dbm','noise_dbm','snr_db','tx_ccq','rx_ccq','tx_mbps','rx_mbps','frequency_mhz','channel_width_mhz','uptime_s','ethernet_up','wireless_up','cpu_pct','memory_pct','in_octets','out_octets','counter_epoch'}
-DEFAULT_PROFILE={'method':'none','poll_seconds':30,'firmware_verified':False,'oids':{},'fields':{},'wan_verified':False,'internet_url':'','internet_marker':'','speed_url':'','speed_mb':1,'speed_seconds':5,'daily_mb':10,'automatic_speed':False,'speed_interval':900,'min_download_mbps':0,'loss_warning_pct':10,'signal_good':-60,'signal_poor':-80,'ccq_good':90,'ccq_poor':50,'snmp_version':'2c','rate_quality_enabled':False,'rate_good_mbps':100,'rate_poor_mbps':10}
+DEFAULT_PROFILE={'method':'none','poll_seconds':30,'firmware_verified':False,'oids':{},'fields':{},'wan_verified':False,'internet_url':'','internet_marker':'','speed_url':'','speed_mb':1,'speed_seconds':5,'daily_mb':10,'automatic_speed':False,'speed_interval':900,'min_download_mbps':0,'loss_warning_pct':10,'signal_good':-60,'signal_poor':-80,'ccq_good':90,'ccq_poor':50,'snmp_version':'2c','rate_quality_enabled':False,'rate_good_mbps':100,'rate_poor_mbps':10,'internet_latency_warning_ms':1500}
 
 def validate_profile(p):
     if not isinstance(p,dict):raise ValueError('Integration settings must be an object.')
@@ -14,7 +14,7 @@ def validate_profile(p):
     if p.get('rate_poor_mbps',10)>=p.get('rate_good_mbps',100):raise ValueError('Good rate must be above poor rate.')
     for key in ('url','internet_url','speed_url'):
         if p.get(key):validate_url(p[key],('https',))
-    for key,low,high in [('poll_seconds',5,3600),('speed_mb',1,64),('speed_seconds',1,30),('daily_mb',1,1024),('speed_interval',900,86400),('snmp_port',1,65535),('rate_cap_kbps',0,1000000),('min_download_mbps',0,100000),('loss_warning_pct',0,100),('signal_good',-120,-1),('signal_poor',-130,-2),('ccq_good',1,100),('ccq_poor',0,99),('rate_good_mbps',0.01,100000),('rate_poor_mbps',0,99999)]:
+    for key,low,high in [('poll_seconds',5,3600),('speed_mb',1,64),('speed_seconds',1,30),('daily_mb',1,1024),('speed_interval',900,86400),('snmp_port',1,65535),('rate_cap_kbps',0,1000000),('min_download_mbps',0,100000),('loss_warning_pct',0,100),('signal_good',-120,-1),('signal_poor',-130,-2),('ccq_good',1,100),('ccq_poor',0,99),('rate_good_mbps',0.01,100000),('rate_poor_mbps',0,99999),('internet_latency_warning_ms',1,60000)]:
         if key in p and (not isinstance(p[key],(int,float)) or not math.isfinite(p[key]) or not low<=p[key]<=high):raise ValueError('Invalid '+key)
     if p.get('signal_poor',-80)>=p.get('signal_good',-60) or p.get('ccq_poor',50)>=p.get('ccq_good',90):raise ValueError('Good thresholds must be above poor thresholds.')
     for key in ('oids','fields'):

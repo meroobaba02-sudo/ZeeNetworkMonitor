@@ -21,7 +21,9 @@ class Task(QRunnable):
                     try:result['service']=service_check(d.service_url,self.source)
                     except Exception:result['service']='Unavailable — timeout, TLS or connection error'
                 if d.wan or d.kind.startswith('WAN'):
-                    try:result['internet']=telemetry.internet_check(d.integration,self.source)
+                    try:
+                        started=time.monotonic();result['internet']=telemetry.internet_check(d.integration,self.source)
+                        if result['internet']=='Online':result['internet_latency_ms']=(time.monotonic()-started)*1000
                     except Exception:result['internet']='Unknown — TLS, route or external endpoint error'
         except Exception:result['error']='Measurement unavailable — check route, endpoint, credentials and limits'
         self.secrets.clear();self.signals.done.emit((d,self.speed,self.generation),result)
@@ -68,10 +70,14 @@ class Measurements(QObject):
         self.failures[key]=min(5,self.failures.get(key,0)+1) if failed else 0
         self.due[key]=time.monotonic()+min(300,d.integration.get('poll_seconds',30)*2**self.failures[key]) if not speed else self.due[key]
         self.window.store.measurement(d.id,result)
-        score,label=telemetry.quality(result.get('metrics',{}),d.integration)
-        incident='Wireless '+label if label in ('Poor','Critical') else ''
-        if result.get('internet','').startswith('Offline'):incident='External Internet check failed'
-        if speed and result.get('download_mbps',float('inf'))<d.integration.get('min_download_mbps',0):incident='Measured download below threshold'
+        from .wan import wan_health,fresh
+        latest=self.latest.get(d.id,{});speed_row=self.speed_latest.get(d.id,{});now=time.time()
+        score,label=telemetry.quality(latest.get('metrics',{}),d.integration,now-latest.get('at',0))
+        incidents=['Wireless '+label] if label in ('Poor','Critical') else []
+        if d.wan or d.kind.startswith('WAN'):
+            state,reason=wan_health(d,self.window.state(d),latest,speed_row,now)
+            if state in ('Offline','Degraded'):incidents.append(reason)
+        incident='; '.join(incidents)
         prior=self.window.telemetry_alerted.get(d.id,'')
         if incident and d.alerts:
             self.window.telemetry_alerted[d.id]=incident
