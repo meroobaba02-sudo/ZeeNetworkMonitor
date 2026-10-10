@@ -61,6 +61,8 @@ def main():
             if not status(base)['valid']:window.close();return 3
         window.show()
         if args.smoke_test:
+            from pysnmp.hlapi.v3arch.asyncio import SnmpEngine
+            snmp_check=SnmpEngine();snmp_check.close_dispatcher()
             def finish():
                 if args.screenshot:
                     window.grab().save(str(args.screenshot))

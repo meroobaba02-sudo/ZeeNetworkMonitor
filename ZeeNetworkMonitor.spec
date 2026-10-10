@@ -3,6 +3,10 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules,collect_data_files
 root=Path(SPECPATH)
 a=Analysis([str(root/'main.py')],pathex=[str(root)],binaries=[],datas=[(str(root/'assets'),'assets')]+collect_data_files('pysnmp'),hiddenimports=collect_submodules('pysnmp'),hookspath=[],hooksconfig={},runtime_hooks=[],excludes=['PySide6.QtWebEngineCore','PySide6.QtWebEngineWidgets','PySide6.QtQml','PySide6.QtQuick','PySide6.QtNetwork','PySide6.QtMultimedia','PySide6.Qt3DCore'],noarchive=False)
+import sys
+sys.path.insert(0,str(root/'scripts'))
+from compile_runtime_mibs import compile_mibs
+a.datas=compile_mibs(a.datas,root/'build/mib_bytecode')
 pyz=PYZ(a.pure)
 exe=EXE(pyz,a.scripts,[],exclude_binaries=True,name='ZeeNetworkMonitor',debug=False,bootloader_ignore_signals=False,strip=False,upx=False,console=False,icon=str(root/'assets'/'icon.ico'))
 coll=COLLECT(exe,a.binaries,a.datas,strip=False,upx=False,name='ZeeNetworkMonitor')

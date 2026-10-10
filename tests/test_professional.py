@@ -140,3 +140,51 @@ def test_actual_tower_drag_saves_without_local_replace_error(app,tmp_path):
     canvas.mouseMoveEvent(SimpleNamespace(position=lambda:target))
     canvas.mouseReleaseEvent(SimpleNamespace())
     saved=s.stations()[0];assert saved.latitude is not None and (saved.map_x,saved.map_y)!=(.5,.5);w.close()
+
+def test_actual_snmp_adapter_against_local_protocol_fixture():
+    import socket,asyncio
+    from pyasn1.codec.ber import decoder,encoder
+    from pysnmp.proto.api import v2c
+    from zee.telemetry import snmp_fetch
+    sock=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);sock.bind(('127.0.0.1',0));sock.settimeout(5)
+    errors=[]
+    def serve():
+        try:
+            raw,addr=sock.recvfrom(65535);msg,_=decoder.decode(raw,asn1Spec=v2c.Message());reply=v2c.apiMessage.get_response(msg);pdu=v2c.apiMessage.get_pdu(reply)
+            v2c.apiPDU.set_varbinds(pdu,[('1.3.6.1.2.1.1.3.0',v2c.Integer(-65))]);sock.sendto(encoder.encode(reply),addr)
+        except Exception as e:errors.append(e)
+    thread=threading.Thread(target=serve);thread.start()
+    d=Device(host='127.0.0.1',integration={'method':'snmp','allow_v2c':True,'snmp_port':sock.getsockname()[1],'oids':{'signal_dbm':{'path':'1.3.6.1.2.1.1.3.0'}}})
+    try:assert asyncio.run(snmp_fetch(d,{'community':'fixture-only'}))=={'signal_dbm':-65}
+    finally:thread.join();sock.close()
+    assert not errors
+
+def test_controlled_https_speed_and_external_check(tls_context,monkeypatch):
+    from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
+    from zee import connections,telemetry
+    serverctx,clientctx=tls_context
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self,*a):pass
+        def do_GET(self):
+            body=b'fixture-internet-marker' if self.path=='/check' else b'x'*1048576
+            self.send_response(200);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+    server=ThreadingHTTPServer(('127.0.0.1',0),Handler);server.socket=serverctx.wrap_socket(server.socket,server_side=True);thread=threading.Thread(target=server.serve_forever);thread.start()
+    def connection(url,source='',timeout=5):
+        u=connections.validate_url(url);return http.client.HTTPSConnection(u.hostname,u.port,context=clientctx,source_address=(source,0) if source else None,timeout=timeout),u.path
+    monkeypatch.setattr(connections,'connection',connection);monkeypatch.setattr(telemetry,'connection',connection)
+    url=f'https://127.0.0.1:{server.server_port}'
+    p={'wan_verified':True,'internet_url':url+'/check','internet_marker':'fixture-internet-marker','speed_url':url+'/bytes','speed_mb':1,'speed_seconds':5}
+    try:
+        assert telemetry.internet_check(p,'127.0.0.1')=='Online'
+        assert telemetry.internet_check(p|{'wan_verified':False},'127.0.0.1')=='Not independently measurable'
+        result=telemetry.speed_test(p,'127.0.0.1');assert result['bytes']==1048576 and result['download_mbps']>0
+    finally:server.shutdown();server.server_close();thread.join()
+
+def test_compiled_mib_loader_format(tmp_path):
+    import sys
+    from pysnmp.smi.builder import DirMibSource
+    sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+    from compile_runtime_mibs import compile_mibs
+    source=tmp_path/'TEST.py';source.write_text('answer=42')
+    entries=compile_mibs([('pysnmp/smi/mibs/TEST.py',str(source),'DATA')],tmp_path/'out')
+    dest=Path(entries[0][1]);code,_=DirMibSource(str(dest.parent)).read('TEST');scope={};exec(code,scope);assert scope['answer']==42
