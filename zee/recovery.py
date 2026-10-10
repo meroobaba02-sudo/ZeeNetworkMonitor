@@ -9,7 +9,7 @@ def open_backup(path):
     try:
         if connection.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
             raise ValueError('Invalid database backup.')
-        if connection.execute('PRAGMA user_version').fetchone()[0] not in (1, 2, 3):
+        if connection.execute('PRAGMA user_version').fetchone()[0] not in (1, 2, 3, 4):
             raise ValueError('Unsupported backup schema.')
         connection.execute('SELECT data FROM devices LIMIT 1')
         return connection

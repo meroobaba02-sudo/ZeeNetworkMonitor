@@ -65,6 +65,8 @@ class Measurements(QObject):
         if self.cancel.is_set() or generation!=self.window.engine.generation:return
         current=next((x for x in self.window.monitor_devices() if x.id==d.id),None)
         if current!=d:return
+        from .faults import context
+        result['context']=context(d,self.window.page_for_device(d))
         if speed:self.speed_latest[d.id]=result
         else:
             old=self.latest.get(d.id,{})

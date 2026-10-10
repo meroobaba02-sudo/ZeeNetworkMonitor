@@ -73,10 +73,12 @@ def cleanup(path, policy, cancel=None, now=None, budget=5):
         db.execute('CREATE TEMP TABLE active_devices(id TEXT PRIMARY KEY)')
         db.executemany('INSERT OR IGNORE INTO active_devices VALUES(?)',[(x,) for x in active]);db.commit()
         pinned='id NOT IN (SELECT event_id FROM event_pins)'
-        ordinary="kind NOT IN ('alert','alert_control','security','audit','licence','license','licensing')"
+        ordinary="kind NOT IN ('alert','alert_control','incident','security','audit','licence','license','licensing')"
         plans=[('samples','at<?',(now-policy.hours*3600,)),('measurements','at<?',(now-policy.hours*3600,)),('events',f'at<? AND {ordinary} AND {pinned}',(now-policy.hours*3600,))]
         if policy.incident_days:
-            plans.append(('events',f"at<? AND kind IN ('alert','alert_control') AND {pinned} AND device NOT IN (SELECT id FROM active_devices)",(now-policy.incident_days*86400,)))
+            plans.append(('events',f"at<? AND kind IN ('alert','alert_control','incident') AND {pinned} AND device NOT IN (SELECT id FROM active_devices)",(now-policy.incident_days*86400,)))
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='incidents'").fetchone():
+                plans.append(('incidents','resolved IS NOT NULL AND resolved<? AND pinned=0',(now-policy.incident_days*86400,)))
         for table,where,params in plans:
             while not cancel.is_set():
                 if time.monotonic()-started>=budget:more=True;break

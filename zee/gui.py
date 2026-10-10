@@ -236,6 +236,7 @@ class Window(PageControls,QMainWindow):
     def __init__(self,store):
         super().__init__()
         self.store=store
+        self.store.suspend_incidents()
         self.page_id=store.setting('active_page','default')
         self.page_snapshot=self.current_page()
         self.monitor_all_enabled=store.setting('monitor_all',False)
@@ -481,6 +482,7 @@ class Window(PageControls,QMainWindow):
         self.event_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.event_table)
         layout.addWidget(QLabel('Latest 1,000 matching events shown; export includes all matching retained events.'))
+        layout.addWidget(button('Incident history / acknowledge / notes',self.open_incidents))
         self.tabs.addTab(page,'Events & alerts')
 
     def settings_page(self):
@@ -615,12 +617,13 @@ class Window(PageControls,QMainWindow):
 
     def request_render(self):
         self._dirty=True
+        self.sync_incidents()
         self.refresh_map(False)
         self.protect_active_alerts()
 
     def protect_active_alerts(self):
         saved=set(self.store.setting('active_incident_devices',[]))
-        active=set(self.alerted)|set(self.telemetry_alerted)
+        active=set(self.alerted)|set(self.telemetry_alerted)|{r[0] for r in self.store.db.execute('SELECT DISTINCT device FROM incidents WHERE resolved IS NULL')}
         for d in self.monitor_devices():
             if d.id in active:saved.add(d.id)
             elif d.id in self.states or not d.enabled:saved.discard(d.id)
@@ -628,6 +631,7 @@ class Window(PageControls,QMainWindow):
         if value!=self.store.setting('active_incident_devices',[]):self.store.set_setting('active_incident_devices',value)
 
     def refresh_states(self):
+        self.sync_incidents()
         usage=self.resource_usage.sample()
         ram=f"{usage['working_set_mb']} MB" if usage['working_set_mb'] is not None else 'Unavailable'
         self.resource_label.setText(f"CPU {usage['cpu_percent_one_core']}% • RAM {ram}")
@@ -681,11 +685,21 @@ class Window(PageControls,QMainWindow):
         self.refresh_map()
 
     def render_diagnosis(self):
-        items=diagnoses(self.devices,{d.id:self.state(d) for d in self.devices})
+        from .faults import evaluate
+        _,items=evaluate(self.devices,self.latest,self.states,self.measurements.latest,self.streaks,time.time(),self.network_pages,self.engine.minimum_interval)
         text=[]
         for x in items:
-            text.append(f"Last known good hop: {x['last_good']}\nFirst observed failing hop: {x['first_failure']}\nDownstream: {', '.join(x['affected']) or 'None'}\n{x['explanation']}")
+            text.append(f"{x['title']}\nConfidence: {x['confidence']} (qualitative, not a probability)\nLast observed replying hop: {x['last_good']}\nFirst observed failing hop: {x['first_failure']}\nObserved failing downstream: {', '.join(x['affected']) or 'None'}\nEvidence: {x['explanation']}\nNext check: {x['next_step']}")
         self.diagnostic.setPlainText('\n\n'.join(text) or 'No suspected segment identified from the current observations. Unknown/stale states are not evidence of a good link.')
+
+    def sync_incidents(self):
+        from .faults import evaluate
+        outcomes,_=evaluate(self.monitor_devices(),self.latest,self.states,self.measurements.latest,self.streaks,time.time(),self.network_pages,self.engine.minimum_interval,correlate=False)
+        self.store.observe_incidents(outcomes)
+
+    def open_incidents(self):
+        from .incident_dialog import IncidentDialog
+        IncidentDialog(self).exec()
 
     def render_table(self):
         if not hasattr(self,'table'):
@@ -885,7 +899,11 @@ class Window(PageControls,QMainWindow):
         now=time.time()
         self.store.record(id,result,now)
         self._stats_cache.pop(id,None)
-        self.latest[id]={'at':now,'latency':result.latency,'success':result.success,'error':result.error}
+        from .faults import context
+        from .faults import fresh
+        old=self.latest.get(id,{})
+        failure_since=old.get('failure_since',now) if old.get('success') is False and fresh(old,now,max(30,max(current.interval,self.engine.minimum_interval)*3)) else now
+        self.latest[id]={'at':now,'latency':result.latency,'success':result.success,'error':result.error,'context':context(current,self.page_for_device(current)),'failure_since':None if result.success else failure_since}
         state='Warning' if result.success and result.latency is not None and result.latency>current.latency_threshold else ('Online' if result.success else 'No reply')
         if result.success and current.integration.get('loss_warning_pct') is not None:
             recent=self.store.samples(id,max(0,now-300),limit=30)
@@ -910,6 +928,19 @@ class Window(PageControls,QMainWindow):
         self.request_render()
 
     def notify(self,id,name,message):
+        if message=='No reply' and self.store.setting('correlate_alerts',True):
+            from .faults import evaluate,fresh,service_responding
+            _,findings=evaluate(self.monitor_devices(),self.latest,self.states,self.measurements.latest,self.streaks,time.time(),self.network_pages,self.engine.minimum_interval)
+            roots={f['device'] for f in findings if f['correlated']}
+            lookup={d.id:d for d in self.monitor_devices()};d=lookup.get(id);cursor=d.parent if d else '';seen={id}
+            tele=self.measurements.latest.get(id,{})
+            if d and fresh(tele,time.time(),max(30,d.integration.get('poll_seconds',30)*3)) and service_responding(tele):cursor=''
+            while cursor in lookup and cursor not in seen:
+                seen.add(cursor);parent=lookup[cursor];row=self.latest.get(cursor,{});tele=self.measurements.latest.get(cursor,{})
+                alternative=fresh(tele,time.time(),max(30,parent.integration.get('poll_seconds',30)*3)) and service_responding(tele)
+                if cursor in roots and parent.page_id==d.page_id and self.states.get(cursor)=='No reply' and self.streaks.get(cursor,0)>=parent.failure_threshold and fresh(row,time.time(),max(30,max(parent.interval,self.engine.minimum_interval)*3)) and not alternative:
+                    self.store.event(id,'alert','Repeated downstream notification suppressed; possible upstream issue at '+parent.name+'. Device incident remains recorded.');return
+                cursor=parent.parent
         if self.monitor_all_enabled:
             d=next((d for d in self.all_devices if d.id==id),None)
             if d:name=self.network_pages[d.page_id].name+' / '+name

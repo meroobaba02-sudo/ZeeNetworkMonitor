@@ -1,4 +1,4 @@
-ZEE NETWORK MONITOR PROFESSIONAL v0.4.9
+ZEE NETWORK MONITOR PROFESSIONAL v0.4.10
 
 WINDOWS PAR CHALANA
 Successful GitHub Actions run se Setup ya Portable artifact download karen.
@@ -63,3 +63,13 @@ WAN setup mein counter interface ka asal naam den aur counters verify karen.
 Interface traffic aur Internet speed alag hain. Upload capacity test abhi unavailable hai.
 Rocket M5 ki asal firmware readings abhi device par test honi hain.
 Details: PHASE5_INTELLIGENCE.md.
+
+PHASE 6 — FAULT / INCIDENT
+Topology & diagnosis mein mumkin fault location, evidence aur next check dekhen.
+Events & alerts > Incident history mein start, last evidence aur recovery dekhen.
+Acknowledge se buzzer band ya incident recover nahi hota; awaaz ke liye Silence use karen.
+Notes aur Pin se zaroori record bachayen. Missing reading recovery nahi hai.
+Close unverified sirf operator closure hai, recovery ka proof nahi.
+Schema 4 upgrade se pehle database ki automatic .pre-v0410.bak copy banti hai.
+Purana software chalana ho to schema 3 backup bhi restore karna zaroori hai.
+Details: PHASE6_INCIDENTS.md.

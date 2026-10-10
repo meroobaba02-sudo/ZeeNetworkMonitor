@@ -9,9 +9,10 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from .workspaces import WorkspaceStore,NetworkPage
+from .incidents import IncidentStore,SCHEMA as INCIDENT_SCHEMA
 from pathlib import Path
 
-VERSION = '0.4.9'
+VERSION = '0.4.10'
 TYPES = ['WAN / Internet', 'Rocket M5 / wireless radio', 'Router', 'Switch', 'CCTV / NVR / camera', 'Server / monitoring agent', 'Other']
 
 
@@ -124,14 +125,14 @@ class Station:
             self.id = str(uuid.uuid4())
 
 
-class Store(WorkspaceStore):
+class Store(WorkspaceStore,IncidentStore):
     """Owned by the GUI/main thread. Workers never touch this connection."""
     def __init__(self, path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(self.path)
         schema = self.db.execute('PRAGMA user_version').fetchone()[0]
-        if schema not in (0, 1, 2, 3):
+        if schema not in (0, 1, 2, 3, 4):
             self.db.close()
             raise ValueError('Unsupported database schema. Use the matching app version or restore a compatible backup.')
         if schema == 1:
@@ -140,6 +141,10 @@ class Store(WorkspaceStore):
             finally: target.close()
         if schema == 2:
             target=sqlite3.connect(str(self.path)+'.pre-v040.bak')
+            try:self.db.backup(target)
+            finally:target.close()
+        if schema == 3:
+            target=sqlite3.connect(str(self.path)+'.pre-v0410.bak')
             try:self.db.backup(target)
             finally:target.close()
         self.db.row_factory = sqlite3.Row
@@ -158,8 +163,9 @@ class Store(WorkspaceStore):
         CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, device TEXT, at REAL, kind TEXT, message TEXT);
         CREATE INDEX IF NOT EXISTS event_time ON events(at);
         CREATE TABLE IF NOT EXISTS event_pins(event_id INTEGER PRIMARY KEY);
-        PRAGMA user_version=3;
         ''')
+        self.db.executescript(INCIDENT_SCHEMA)
+        self.db.execute('PRAGMA user_version=4')
         self.db.commit()
 
         if not self.pages():self.save_page(NetworkPage())
