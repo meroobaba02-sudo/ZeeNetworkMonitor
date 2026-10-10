@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass, field
 from .workspaces import WorkspaceStore,NetworkPage
 from pathlib import Path
 
-VERSION = '0.4.6'
+VERSION = '0.4.7'
 TYPES = ['WAN / Internet', 'Rocket M5 / wireless radio', 'Router', 'Switch', 'CCTV / NVR / camera', 'Server / monitoring agent', 'Other']
 
 
@@ -148,13 +148,16 @@ class Store(WorkspaceStore):
         CREATE TABLE IF NOT EXISTS pages(id TEXT PRIMARY KEY,data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS measurements(id INTEGER PRIMARY KEY,device TEXT,at REAL,data TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS measurement_device_time ON measurements(device,at);
+        CREATE INDEX IF NOT EXISTS measurement_time ON measurements(at);
         CREATE TABLE IF NOT EXISTS stations(id TEXT PRIMARY KEY, data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY, data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS samples(id INTEGER PRIMARY KEY, device TEXT, at REAL, success INTEGER, latency REAL, error TEXT);
         CREATE INDEX IF NOT EXISTS sample_device_time ON samples(device, at);
+        CREATE INDEX IF NOT EXISTS sample_time ON samples(at);
         CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, device TEXT, at REAL, kind TEXT, message TEXT);
         CREATE INDEX IF NOT EXISTS event_time ON events(at);
+        CREATE TABLE IF NOT EXISTS event_pins(event_id INTEGER PRIMARY KEY);
         PRAGMA user_version=3;
         ''')
         self.db.commit()
@@ -225,8 +228,17 @@ class Store(WorkspaceStore):
         self.db.execute('INSERT INTO samples(device,at,success,latency,error) VALUES(?,?,?,?,?)', (device, time.time() if at is None else at, int(result.success), result.latency, result.error))
         self.db.commit()
 
-    def samples(self, device, since=0):
+    def samples(self, device, since=0, limit=None):
+        if limit is not None:
+            return list(reversed(list(self.db.execute('SELECT * FROM samples WHERE device=? AND at>=? ORDER BY at DESC,id DESC LIMIT ?', (device,since,int(limit))))))
         return list(self.db.execute('SELECT * FROM samples WHERE device=? AND at>=? ORDER BY at,id', (device, since)))
+
+    def pin_event(self, event_id):
+        with self.db:
+            if self.db.execute('SELECT 1 FROM event_pins WHERE event_id=?',(event_id,)).fetchone():
+                self.db.execute('DELETE FROM event_pins WHERE event_id=?',(event_id,))
+            else:
+                self.db.execute('INSERT INTO event_pins SELECT id FROM events WHERE id=?',(event_id,))
 
     def stats(self, device, since=0):
         r = self.db.execute('SELECT COUNT(*) n, COALESCE(SUM(success),0) ok, AVG(CASE WHEN success=1 THEN latency END) latency, MAX(CASE WHEN success=1 THEN at END) last_ok, MAX(CASE WHEN success=0 THEN at END) last_fail FROM samples WHERE device=? AND at>=?', (device,since)).fetchone()

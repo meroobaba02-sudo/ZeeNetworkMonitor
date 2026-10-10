@@ -1,0 +1,71 @@
+{
+  "kind": "synthetic; no physical network requests",
+  "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+  "python": "3.12.14",
+  "cpu_count": 9,
+  "cpu_basis": "100 percent = one CPU core; whole startup/check/cleanup scenario",
+  "scope": "working-set readings are process-wide and cumulative across scenarios; heartbeat samples cover checks and cleanup, not synchronous startup",
+  "rows": [
+    {
+      "devices": 10,
+      "history_rows_per_device": 100,
+      "expired_rows": 25000,
+      "window_start_seconds": 0.118,
+      "all_checks_seconds": 0.146,
+      "peak_ping_workers": 8,
+      "cleanup_wall_seconds": 0.027,
+      "cleanup_worker_seconds": 0.023,
+      "max_heartbeat_gap_ms": 52.2,
+      "heartbeat_samples": 4,
+      "close_seconds": 0.002,
+      "working_set_mb": 81.6,
+      "cpu_percent_one_core": 90.9
+    },
+    {
+      "devices": 50,
+      "history_rows_per_device": 100,
+      "expired_rows": 25000,
+      "window_start_seconds": 0.088,
+      "all_checks_seconds": 0.845,
+      "peak_ping_workers": 8,
+      "cleanup_wall_seconds": 0.034,
+      "cleanup_worker_seconds": 0.027,
+      "max_heartbeat_gap_ms": 54.8,
+      "heartbeat_samples": 39,
+      "close_seconds": 0.003,
+      "working_set_mb": 90.8,
+      "cpu_percent_one_core": 29.6
+    },
+    {
+      "devices": 100,
+      "history_rows_per_device": 100,
+      "expired_rows": 25000,
+      "window_start_seconds": 0.112,
+      "all_checks_seconds": 1.731,
+      "peak_ping_workers": 8,
+      "cleanup_wall_seconds": 0.028,
+      "cleanup_worker_seconds": 0.024,
+      "max_heartbeat_gap_ms": 66.3,
+      "heartbeat_samples": 82,
+      "close_seconds": 0.003,
+      "working_set_mb": 100.5,
+      "cpu_percent_one_core": 21.7
+    },
+    {
+      "devices": 250,
+      "history_rows_per_device": 100,
+      "expired_rows": 25000,
+      "window_start_seconds": 0.157,
+      "all_checks_seconds": 4.526,
+      "peak_ping_workers": 8,
+      "cleanup_wall_seconds": 0.03,
+      "cleanup_worker_seconds": 0.026,
+      "max_heartbeat_gap_ms": 131.3,
+      "heartbeat_samples": 202,
+      "close_seconds": 0.002,
+      "working_set_mb": 111.4,
+      "cpu_percent_one_core": 23.7
+    }
+  ],
+  "limitations": "Cloud/CI machine, not the customer old i5 Windows 10. Short simulated delays do not model real DNS, radio, TLS or maximum network timeouts."
+}

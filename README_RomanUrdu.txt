@@ -1,4 +1,4 @@
-ZEE NETWORK MONITOR PROFESSIONAL v0.4.6
+ZEE NETWORK MONITOR PROFESSIONAL v0.4.7
 
 WINDOWS PAR CHALANA
 Successful GitHub Actions run se Setup ya Portable artifact download karen.
@@ -30,7 +30,13 @@ Recovery ke liye app band kar ke restore.pending.sqlite3 ko doosri jagah move ka
 Full recovery ke liye poora data folder bhi copy karen: database-only backup mein
 credentials, licence aur mobile sidecar files shamil nahi. Credentials isi Windows
 account se protected hain. Uninstall data preserve karta hai.
-History abhi default 90 days hai; 48-hour policy Phase 3 mein ayegi.
+Nayi installation par detailed history 48 hours hai. Purani saved customization preserve hoti hai.
+Settings mein hours aur Automatic background cleanup set karen; Save settings dabayen.
+Clean expired records now manual cleanup hai. Alerts mein Pin / Unpin selected se event bachayen.
+Advanced monitoring / history mein retries, worker limits, refresh, alert retention aur
+cleanup se pehle archive ka option hai. Archives extra disk leti hain aur khud delete nahi hotin.
+Security/audit, pinned aur unresolved alerts ordinary cleanup se protected hain.
+Disk threshold warning hai; fresh records zabardasti delete nahi hote.
 
 ADMIN AUR TEST STATUS
 ZeeLicenseManager owner-only limited utility hai; full Admin Studio Phase 8 mein ayega.

@@ -14,6 +14,7 @@ class PageControls:
     def change_page(self,index):
         id=self.page_picker.itemData(index)
         if not id or id==self.page_id:return
+        self._resume_minimized=False
         self.engine.invalidate();self.measurements.stop();self.requested.clear();self.buzzer.update({});self.page_id=id;self.states.clear();self.latest.clear();self.streaks.clear();self.alerted.clear()
         self.measurements.latest.clear();self.measurements.speed_latest.clear();self.telemetry_alerted.clear()
         self.start_button.setText('▶ Start monitoring');self.store.set_setting('active_page',id);self.reload()

@@ -1,6 +1,6 @@
 # Windows build and download
 
-The existing v0.4.5 Windows build succeeded at [run 38052485552](https://github.com/meroobaba02-sudo/ZeeNetworkMonitor/actions/runs/38052485552). The Phase 2 update is v0.4.6: inspect its own run before calling its packages verified.
+The existing v0.4.5 Windows build succeeded at [run 38052485552](https://github.com/meroobaba02-sudo/ZeeNetworkMonitor/actions/runs/38052485552). The Phase 3 update is v0.4.7: inspect its own run before calling its packages verified. This workflow also records synthetic scheduling, UI heartbeat, cleanup and process-resource measurements.
 
 1. Open the repository Actions tab and select **Build and test Professional Windows packages**.
 2. Open a successful run for the required commit/version.

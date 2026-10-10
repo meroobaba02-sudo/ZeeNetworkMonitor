@@ -250,6 +250,11 @@ class Window(PageControls,QMainWindow):
         self.telemetry_alerted={}
         self.requested=set()
         self.devices=[]
+        self._stats_cache={}
+        self._dirty=True
+        self._last_view_key=None
+        self._table_page=0
+        self._resume_minimized=False
         self.setWindowTitle(f'Zee Network Monitor • {VERSION}')
         self.resize(1360,790)
         self.setMinimumSize(980,650)
@@ -308,6 +313,11 @@ class Window(PageControls,QMainWindow):
         self.kind.currentTextChanged.connect(self.render_table)
         tools.addWidget(self.kind)
         dash.addLayout(tools)
+        paging=QHBoxLayout()
+        paging.addWidget(button('Previous page',lambda:self.table_page(-1)))
+        self.page_count=QLabel();paging.addWidget(self.page_count)
+        paging.addWidget(button('Next page',lambda:self.table_page(1)))
+        paging.addStretch();dash.addLayout(paging)
         actions=QHBoxLayout()
         for title,fn in [('Add device',self.add),('Edit',self.edit),('Delete',self.delete),('Ping selected',self.ping_selected),('Continuous selected',self.continuous_selected),('Refresh',self.reload),('Export summary',self.export_summary)]:
             actions.addWidget(button(title,fn))
@@ -356,15 +366,24 @@ class Window(PageControls,QMainWindow):
             self.tray.show()
         self.statusBar().showMessage('Ready • Monitoring is stopped')
         self.statusBar().addPermanentWidget(QLabel('Created by Zeeshan Rasool'))
+        from .resources import Usage
+        self.resource_usage=Usage();self.resource_label=QLabel()
+        self.resource_label.setToolTip('This app only. CPU: 100% = one core. RAM: working set.')
+        self.statusBar().addPermanentWidget(self.resource_label)
         self.queue_timer=QTimer(self)
         self.queue_timer.timeout.connect(self.drain)
         self.queue_timer.start(150)
         self.view_timer=QTimer(self)
         self.view_timer.timeout.connect(self.refresh_states)
         self.view_timer.start(2000)
+        from .retention import Cleaner
+        self.cleaner=Cleaner(self);self.cleaner.finished.connect(self.cleanup_finished)
+        self.measurements.changed.connect(self.request_render)
+        self.apply_performance()
+        self.cleanup_status.setText(self.store.setting('cleanup_status','No cleanup completed yet.'))
         self.maintenance=QTimer(self)
         self.maintenance.timeout.connect(self.prune)
-        self.maintenance.start(3600000)
+        self.maintenance.start(600000)
         self.store.event('','application','Application started')
         self.reload()
         self.prune()
@@ -437,6 +456,7 @@ class Window(PageControls,QMainWindow):
         for w in (self.event_device,self.event_tower,self.event_search,self.event_from,self.event_to):
             tools.addWidget(w)
         tools.addWidget(button('Export events',self.export_events))
+        tools.addWidget(button('Pin / Unpin selected',self.pin_selected_event))
         layout.addLayout(tools)
         self.event_table=QTableWidget(0,4)
         self.event_table.setHorizontalHeaderLabels(['Time (local)','Device','Type','Message'])
@@ -448,8 +468,9 @@ class Window(PageControls,QMainWindow):
         self.tabs.addTab(page,'Events & alerts')
 
     def settings_page(self):
-        page=QWidget()
-        form=QFormLayout(page)
+        page=QScrollArea();page.setWidgetResizable(True)
+        body=QWidget();page.setWidget(body)
+        form=QFormLayout(body)
         self.notifications=QCheckBox('Desktop notifications (when system tray is available)')
         self.notifications.setChecked(self.store.setting('notifications',True))
         self.beep=QCheckBox('Beep on alert')
@@ -459,11 +480,19 @@ class Window(PageControls,QMainWindow):
         self.recovery=QCheckBox('Recovery notifications')
         self.recovery.setChecked(self.store.setting('recovery',True))
         self.retention=QSpinBox()
-        self.retention.setRange(1,3650)
-        self.retention.setValue(self.store.setting('retention',90))
+        from .retention import history_hours
+        self.retention.setRange(1,87600)
+        self.retention.setValue(history_hours(self.store))
+        self.auto_cleanup=QCheckBox('Automatic background cleanup')
+        self.auto_cleanup.setChecked(self.store.setting('auto_cleanup',True))
         for w in (self.notifications,self.beep,self.recovery):
             form.addRow(w)
-        form.addRow('History retention (days)',self.retention)
+        form.addRow('Detailed history (hours)',self.retention)
+        form.addRow(self.auto_cleanup)
+        self.cleanup_status=QLabel();self.cleanup_status.setWordWrap(True)
+        form.addRow(self.cleanup_status)
+        form.addRow(button('Clean expired records now',lambda:self.prune(manual=True)))
+        form.addRow(button('Advanced monitoring / history',self.performance_dialog))
         form.addRow(button('Test buzzer (1 second)',self.test_buzzer))
         form.addRow(button('Help / About',self.help_about))
         form.addRow(button('Save settings',self.save_settings,True))
@@ -487,6 +516,8 @@ class Window(PageControls,QMainWindow):
         pages=[p for p in self.store.pages() if not p.archived]
         if not any(p.id==self.page_id for p in pages):self.page_id=pages[0].id
         self.page_snapshot=self.current_page()
+        self._stats_cache.clear()
+        self._dirty=True
         self.page_picker.blockSignals(True);self.page_picker.clear()
         for p in pages:self.page_picker.addItem(p.name,p.id)
         self.page_picker.setCurrentIndex(self.page_picker.findData(self.page_id));self.page_picker.blockSignals(False)
@@ -523,6 +554,8 @@ class Window(PageControls,QMainWindow):
 
     def highlight_nav(self,index):
         for i,b in enumerate(self.nav_buttons):b.setChecked(i==index)
+        self._dirty=True
+        if hasattr(self,'view_timer'):self.refresh_states()
 
     def set_buzzer(self,enabled):
         self.store.set_setting('buzzer_enabled',enabled)
@@ -547,8 +580,8 @@ class Window(PageControls,QMainWindow):
         self.alarm_status.setText('FAULT ALARM' if self.buzzer.playing else ('Silenced' if self.buzzer.active else 'Alarm clear'))
         self.alarm_status.setStyleSheet('color:#ff6478' if self.buzzer.playing else 'color:#9aacc0')
 
-    def refresh_map(self):
-        if hasattr(self,'map_page'):self.map_page.refresh()
+    def refresh_map(self,draw=True):
+        if draw and hasattr(self,'map_page'):self.map_page.refresh()
         active={}
         for d in self.devices:
             state=self.state(d)
@@ -560,12 +593,40 @@ class Window(PageControls,QMainWindow):
             if d.enabled and d.alerts and d.id in self.telemetry_alerted and time.time()-r.get('at',0)<max(30,d.integration.get('poll_seconds',30)*3):active[d.id]=self.telemetry_alerted[d.id]
         self.buzzer.update(active)
 
+    def request_render(self):
+        self._dirty=True
+        self.refresh_map(False)
+        self.protect_active_alerts()
+
+    def protect_active_alerts(self):
+        saved=set(self.store.setting('active_incident_devices',[]))
+        active=set(self.alerted)|set(self.telemetry_alerted)
+        for d in self.devices:
+            if d.id in active:saved.add(d.id)
+            elif d.id in self.states or not d.enabled:saved.discard(d.id)
+        value=sorted(saved)
+        if value!=self.store.setting('active_incident_devices',[]):self.store.set_setting('active_incident_devices',value)
+
     def refresh_states(self):
-        self.render_table()
-        self.topology.refresh(self.devices,{d.id:self.state(d) for d in self.devices})
-        self.render_diagnosis()
-        self.refresh_map()
+        usage=self.resource_usage.sample()
+        ram=f"{usage['working_set_mb']} MB" if usage['working_set_mb'] is not None else 'Unavailable'
+        self.resource_label.setText(f"CPU {usage['cpu_percent_one_core']}% • RAM {ram}")
+        key=tuple((d.id,self.state(d)) for d in self.devices)
+        if self._dirty or key!=self._last_view_key:
+            self.render_table()
+            tab=self.tabs.currentIndex()
+            if tab==0:self.refresh_map()
+            elif tab==2:self.render_history()
+            elif tab==3:
+                self.topology.refresh(self.devices,{d.id:self.state(d) for d in self.devices});self.render_diagnosis()
+            elif tab==4:self.render_events()
+            elif tab==6:self.pro_panel.refresh()
+            self._dirty=False;self._last_view_key=key
+        self.refresh_map(False)
         self.update_mobile()
+
+    def table_page(self,delta):
+        self._table_page=max(0,self._table_page+delta);self.render_table()
 
     def state(self,d):
         if not d.enabled:
@@ -575,7 +636,7 @@ class Window(PageControls,QMainWindow):
         if not d.host:
             return 'Unconfigured'
         last=self.latest.get(d.id)
-        if last and time.time()-last['at']>max(30,d.interval*3):
+        if last and time.time()-last['at']>max(30,max(d.interval,self.engine.minimum_interval)*3):
             return 'Unknown'
         return self.states.get(d.id,'Unknown')
 
@@ -613,13 +674,19 @@ class Window(PageControls,QMainWindow):
         self.table.blockSignals(True)
         self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
+        query=self.search.text().casefold()
+        visible=[d for d in self.devices if (not query or query in ' '.join([d.name,d.host,d.location,d.notes]).casefold()) and self.station.currentText() in ('All locations','',d.location) and self.kind.currentText() in ('All types',d.kind)]
+        pages=max(1,(len(visible)+199)//200);self._table_page=min(self._table_page,pages-1)
+        self.page_count.setText(f'Page {self._table_page+1} / {pages} • {len(visible)} devices')
+        visible=visible[self._table_page*200:(self._table_page+1)*200]
         all_states=[]
         latencies=[]
         failed=0
-        for d in self.devices:
+        for d in visible:
             state=self.state(d)
             all_states.append(state)
-            stats=self.store.stats(d.id)
+            if d.id not in self._stats_cache:self._stats_cache[d.id]=self.store.stats(d.id)
+            stats=self._stats_cache[d.id]
             failed+=stats['n']-stats['ok']
             last=self.latest.get(d.id,{})
             if state in ('Online','Warning') and last.get('latency') is not None:
@@ -656,7 +723,7 @@ class Window(PageControls,QMainWindow):
         id=self.history_device.currentData()
         seconds=self.range.currentData() or 0
         since=time.time()-seconds if seconds else 0
-        rows=self.store.samples(id,since) if id else []
+        rows=self.store.samples(id,since,limit=1000) if id else []
         self.graph.rows=rows[-1000:]
         self.graph.update()
         if not id:
@@ -666,7 +733,7 @@ class Window(PageControls,QMainWindow):
         stats=self.store.stats(id,since)
         avg=f"{stats['latency']:.1f} ms" if stats['latency'] is not None else '—'
         uptime=f"{stats['uptime']:.1f}%" if stats['uptime'] is not None else '—'
-        self.history_summary.setText(f"Checks: {stats['n']} • Replies: {stats['ok']} • Sampled availability: {uptime} • Average latency: {avg}\nLast success: {stamp(stats['last_ok'])} • Last failure: {stamp(stats['last_fail'])}\nThese are sample estimates; downtime during application shutdown or missing observations is unknown.")
+        self.history_summary.setText(f"Checks: {stats['n']} • Replies: {stats['ok']} • Sampled availability: {uptime} • Average latency: {avg}\nLast success: {stamp(stats['last_ok'])} • Last failure: {stamp(stats['last_fail'])}\nGraph/outage list: latest 1,000 samples. Totals cover the selected retained window. Unobserved downtime is unknown.")
         text=[]
         for start,end in outages(rows):
             duration=f'{end-start:.0f} seconds between observations' if end is not None else 'Recovery not observed'
@@ -683,11 +750,15 @@ class Window(PageControls,QMainWindow):
         if not hasattr(self,'event_table'):
             return
         rows=self.event_rows()
+        pins={r[0] for r in self.store.db.execute('SELECT event_id FROM event_pins')}
         names={d.id:d.name for d in self.devices}
         self.event_table.setRowCount(len(rows))
         for i,r in enumerate(rows):
             for j,value in enumerate([stamp(r['at']),names.get(r['device'],'Application / deleted device'),r['kind'],r['message']]):
-                self.event_table.setItem(i,j,QTableWidgetItem(value))
+                item=QTableWidgetItem(value)
+                if j==0:item.setData(Qt.UserRole,r['id'])
+                if r['id'] in pins:item.setToolTip('Pinned: protected from cleanup');item.setForeground(QColor('#fbbf24'))
+                self.event_table.setItem(i,j,item)
 
     def add(self):
         self.edit_device(None)
@@ -719,6 +790,7 @@ class Window(PageControls,QMainWindow):
             self.reload()
 
     def toggle(self):
+        self._resume_minimized=False
         if self.engine.running:
             self.engine.stop()
             self.measurements.stop()
@@ -783,14 +855,15 @@ class Window(PageControls,QMainWindow):
         if result.infrastructure_error:
             self.states[id]='Probe error'
             self.store.event(id,'probe_error',result.error)
-            self.render_all()
+            self.request_render()
             return
         now=time.time()
         self.store.record(id,result,now)
+        self._stats_cache.pop(id,None)
         self.latest[id]={'at':now,'latency':result.latency,'success':result.success,'error':result.error}
         state='Warning' if result.success and result.latency is not None and result.latency>current.latency_threshold else ('Online' if result.success else 'No reply')
         if result.success and current.integration.get('loss_warning_pct') is not None:
-            recent=self.store.samples(id,max(0,now-300))[-30:]
+            recent=self.store.samples(id,max(0,now-300),limit=30)
             if len(recent)>=3 and 100*sum(not r['success'] for r in recent)/len(recent)>current.integration['loss_warning_pct']:state='Warning'
         self.states[id]=state
         self.streaks[id]=0 if result.success else self.streaks.get(id,0)+1
@@ -809,7 +882,7 @@ class Window(PageControls,QMainWindow):
             self.alerted.pop(id,None)
             if current.alerts and self.recovery.isChecked():
                 self.notify(id,current.name,'Reply received — recovered')
-        self.render_all()
+        self.request_render()
 
     def notify(self,id,name,message):
         self.store.event(id,'alert',name+': '+message)
@@ -818,14 +891,66 @@ class Window(PageControls,QMainWindow):
 
 
     def save_settings(self):
-        for key,value in [('notifications',self.notifications.isChecked()),('beep',self.beep.isChecked()),('recovery',self.recovery.isChecked()),('retention',self.retention.value())]:
+        for key,value in [('notifications',self.notifications.isChecked()),('beep',self.beep.isChecked()),('recovery',self.recovery.isChecked()),('detail_hours',self.retention.value()),('auto_cleanup',self.auto_cleanup.isChecked())]:
             self.store.set_setting(key,value)
         self.store.event('','config','Alert and retention settings saved')
         self.prune()
         self.statusBar().showMessage('Settings saved')
 
-    def prune(self):
-        self.store.prune(self.store.setting('retention',90))
+    def prune(self,manual=False):
+        from .retention import Policy,history_hours
+        if not manual and not self.store.setting('auto_cleanup',True):return
+        self.protect_active_alerts()
+        policy=Policy(history_hours(self.store),self.store.setting('incident_days',90),self.store.setting('disk_warning_mb',250),self.store.setting('archive_cleanup',False))
+        if getattr(self,'_cleanup_continuation',False):
+            from dataclasses import replace
+            policy=replace(policy,archive=False)
+        self._cleanup_continuation=False
+        if self.cleaner.start(self.store.path,policy):
+            self._cleanup_manual=manual
+            self.cleanup_status.setText('Cleaning expired records in background…')
+
+    def cleanup_finished(self,result):
+        if result.get('error'):
+            text=result['error'];self._cleanup_retry=True
+        else:
+            text=f"Last cleanup: {stamp(result['at'])} • {result['deleted']} records removed • DB {result['physical_mb']} MB"
+            if result.get('archive'):text+=' • Database archive saved'
+            if result.get('disk_warning'):text+=' • Disk warning: protected/fresh data or archives may need review'
+            self._stats_cache.clear();self.request_render();self._cleanup_retry=False
+        self.cleanup_status.setText(text);self.store.set_setting('cleanup_status',text)
+        self.store.set_setting('last_cleanup',result)
+        if result.get('more'):
+            self._cleanup_continuation=True
+            QTimer.singleShot(1000,lambda:self.prune(manual=self._cleanup_manual) if not self.cleaner.cancel.is_set() else None)
+        elif result.get('error') and self.store.setting('auto_cleanup',True):
+            QTimer.singleShot(60000,lambda:self.prune() if not self.cleaner.cancel.is_set() else None)
+
+    def performance_dialog(self):
+        from .performance import PerformanceDialog
+        PerformanceDialog(self).exec()
+
+    def apply_performance(self):
+        self.engine.configure(self.store.setting('ping_workers',8),self.store.setting('ping_retries',0),self.store.setting('retry_delay',1),self.store.setting('minimum_interval',1))
+        self.measurements.configure(self.store.setting('telemetry_workers',2))
+        milliseconds=self.store.setting('refresh_seconds',2)*1000
+        self.view_timer.setInterval(milliseconds);self.pro_panel.timer.setInterval(milliseconds)
+
+    def pin_selected_event(self):
+        item=self.event_table.item(self.event_table.currentRow(),0)
+        if item:
+            self.store.pin_event(item.data(Qt.UserRole));self.render_events()
+
+    def changeEvent(self,event):
+        from PySide6.QtCore import QEvent
+        super().changeEvent(event)
+        if event.type()!=QEvent.WindowStateChange or not hasattr(self,'engine'):return
+        if self.isMinimized() and self.store.setting('pause_minimized',False):
+            self._resume_minimized=self.engine.running
+            if self._resume_minimized:self.engine.stop();self.measurements.stop()
+        elif not self.isMinimized() and self._resume_minimized:
+            self._resume_minimized=False;self.engine.start();self.measurements.enabled=True
+
 
     def backup(self):
         path,_=QFileDialog.getSaveFileName(self,'Save database backup','ZeeNetworkMonitor-backup.sqlite3','SQLite (*.sqlite3)')
@@ -874,6 +999,7 @@ class Window(PageControls,QMainWindow):
         for dialog in self.details_windows:dialog.close()
         self.pro_panel.timer.stop()
         self.license_timer.stop()
+        self.cleaner.shutdown()
         self.measurements.shutdown()
         if hasattr(self,'mobile_server') and self.mobile_server:self.mobile_server.stop()
         self.map_page.shutdown()

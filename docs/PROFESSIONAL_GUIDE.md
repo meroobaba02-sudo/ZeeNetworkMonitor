@@ -1,4 +1,4 @@
-# Zee Network Monitor Professional 0.4.6 — owner evaluation preview
+# Zee Network Monitor Professional 0.4.7 — owner evaluation preview
 
 Created by Zeeshan Rasool
 
@@ -99,3 +99,7 @@ Mobile dashboard adds network/tower search, filtered recent device events, contr
 
 ## v0.4.6 stabilization
 Source-bound labels cover IPv4/IPv6 and page-level source selection. Pending database restores are revalidated before replacement; corrupted, unsupported or incomplete device-table backups leave the current database intact. Before-restore.bak preserves the previous database. Keep the complete user-data folder for credential/licence/mobile recovery. Detailed history retention is still 90 days by default; the 48-hour policy belongs to Phase 3. Full Admin Studio begins in Phase 8, with a small testable customer/package increment first. See PHASE2_STABILIZATION.md for scope and regression evidence.
+
+
+## v0.4.7 lightweight monitoring and retention
+Settings now offers detailed retention in hours (48 on a fresh install), automatic background cleanup, manual cleanup and last-result/error status. Explicit legacy retention customization remains intact. Advanced monitoring/history controls bounded ping/service pools, optional ping retries/delay, minimum ping interval, screen refresh, alert retention (90 days; 0 keeps alerts), database disk-warning threshold and archive-before-cleanup. A threshold is a warning, not a hard cap: only expired records are deleted. Archives are full database snapshots, exclude external credential/licence/mobile sidecars, consume extra disk and remain until removed manually. Security/audit/licence records, pinned events and persisted unresolved-device alerts are protected. Alerts > Pin/Unpin selected protects important events. Formal incident lifecycle follows in Phase 6. Minimize continues monitoring by default; optional pause resumes the prior periodic scope. Running network calls retain their existing bounded deadlines; Stop interrupts retry waits. Extra retries produce one final logical-check result, not packet-level loss statistics. Device table pages contain 200 records; history graph/outage list loads latest 1,000 samples and WAN day/session statistics use latest 5,000 records with explicit labels. Full exports remain available. CPU/RAM show this process only; 100% CPU is one core. Synthetic Windows/Linux measurements are not old-laptop or physical-network proof. Details and acceptance: PHASE3_PERFORMANCE.md.

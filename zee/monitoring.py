@@ -32,12 +32,12 @@ class Measurements(QObject):
     changed=Signal()
     def __init__(self,window,vault):
         super().__init__(window);self.window=window;self.vault=vault;self.pool=QThreadPool(self);self.pool.setMaxThreadCount(2)
-        self.pending={};self.due={};self.latest={};self.speed_latest={};self.failures={};self.cancel=threading.Event();self.enabled=False
+        self.pending={};self.due={};self.latest={};self.speed_latest={};self.failures={};self.cancel=threading.Event();self.enabled=False;self.limit=2
         self.signals=Signals();self.signals.done.connect(self.complete)
         self.timer=QTimer(self);self.timer.timeout.connect(self.tick);self.timer.start(1000)
     def submit(self,d,speed=False):
         key=(d.id,speed)
-        if self.cancel.is_set() or key in self.pending or len(self.pending)>=2 or not d.enabled or not d.host:return False
+        if self.cancel.is_set() or any(k[0]==d.id for k in self.pending) or len(self.pending)>=self.limit or not d.enabled or not d.host:return False
         page=self.window.current_page()
         if (page.interface_hint or page.gateway_hint) and not page.routing_verified:return False
         p=d.integration
@@ -96,4 +96,6 @@ class Measurements(QObject):
                 try:self.submit(d,True)
                 except ValueError:self.due[(d.id,True)]=time.monotonic()+900
     def stop(self):self.enabled=False
+    def configure(self,limit=2):
+        self.limit=max(1,min(4,int(limit)));self.pool.setMaxThreadCount(self.limit)
     def shutdown(self):self.cancel.set();self.timer.stop();self.pool.clear();self.pool.waitForDone()

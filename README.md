@@ -1,6 +1,6 @@
 # Zee Network Monitor
 
-Windows desktop network monitor for towers, radios, WAN links and camera services. Current stabilization release: **0.4.6**, owner-evaluation preview.
+Windows desktop network monitor for towers, radios, WAN links and camera services. Current monitoring/retention release: **0.4.7**, owner-evaluation preview.
 
 Download the setup or portable package from a successful [Windows Actions run](https://github.com/meroobaba02-sudo/ZeeNetworkMonitor/actions). No Python is needed on the customer's laptop. Keep the entire portable folder together.
 
@@ -11,3 +11,5 @@ The separate ZeeLicenseManager utility issues licences. Full Zee Admin Studio is
 Windows CI tests packaging on Windows Server 2022. Physical Windows 10, real five-network routing, Rocket M5 readings, Android and old-laptop performance remain unverified.
 
 Start with README_RomanUrdu.txt and docs/PROFESSIONAL_GUIDE.md. Current stabilization details: docs/PHASE2_STABILIZATION.md. Older audit/test documents describe their original versions and are historical evidence.
+
+Phase 3 adds bounded configurable checks, coalesced refresh, device pagination, process CPU/RAM display, background 48-hour detail cleanup, protected/pinned alerts and archive controls. See docs/PHASE3_PERFORMANCE.md for policy and synthetic measurements.

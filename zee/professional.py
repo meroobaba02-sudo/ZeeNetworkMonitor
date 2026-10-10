@@ -154,7 +154,7 @@ class ProfessionalPanel(QWidget):
         for title,fn in [('Device details',self.details),('Configure adapter',self.configure),('WAN setup / routing',self.wan_setup),('Refresh measurements',self.poll),('Test Speed Now',self.speed)]:
             b=QPushButton(title);b.clicked.connect(fn);row.addWidget(b)
         self.table.itemSelectionChanged.connect(self.history)
-        self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(2000)
+        self.timer=QTimer(self);self.timer.timeout.connect(lambda:self.refresh() if self.isVisible() else None);self.timer.start(2000)
     def device(self):
         i=self.table.item(self.table.currentRow(),0)
         return next((d for d in self.w.devices if i and d.id==i.data(Qt.UserRole)),None)
@@ -184,12 +184,12 @@ class ProfessionalPanel(QWidget):
         from datetime import datetime
         from .dashboard import speed_statistics
         now=time.time();midnight=datetime.now().replace(hour=0,minute=0,second=0,microsecond=0).timestamp()
-        rows=self.w.store.measurements(d.id,min(midnight,self.session_started),-1)
+        rows=self.w.store.measurements(d.id,min(midnight,self.session_started),5000)
         today=[x for x in rows if x['at']>=midnight];session=[x for x in rows if x['at']>=self.session_started]
         controlled=self.history_method.currentIndex()==0
         graph_rows=[x for x in today if x.get('rate_kind','').startswith('Controlled download')==controlled and 'download_mbps' in x]
         self.graph.values=[x.get('download_mbps') for x in graph_rows[-1000:]];self.graph.update()
-        self.summary.setText('Today (local): '+speed_statistics(today)+'\nThis app session: '+speed_statistics(session)+'\nMeasured sample statistics; traffic usage and controlled throughput are separate. Graph: latest 1,000 samples.')
+        self.summary.setText('Today (local): '+speed_statistics(today)+'\nThis app session: '+speed_statistics(session)+'\nLatest 5,000 retained records; traffic usage and controlled throughput are separate. Graph: latest 1,000 samples.')
 
     def refresh(self):
         selected=self.device();self.table.blockSignals(True);self.table.setRowCount(0);rank=[]
@@ -202,7 +202,7 @@ class ProfessionalPanel(QWidget):
             if rate is speed and not rate_stale and 'download_mbps' in rate and not d.integration.get('rate_cap_kbps'):rank.append((rate['download_mbps'],d.name))
             from .wan import wan_health
             health,reason=wan_health(d,self.w.state(d),r,speed,time.time()) if d.wan or d.kind.startswith('WAN') else ('—','Not a WAN device')
-            recent=self.w.store.samples(d.id,max(0,time.time()-300))[-30:]
+            recent=self.w.store.samples(d.id,max(0,time.time()-300),limit=30)
             loss=f'{100*sum(not x["success"] for x in recent)/len(recent):.1f}% ({len(recent)} samples)' if recent else 'Unavailable'
             history=self.w.store.measurements(d.id,time.time()-86400,1000)
             last_success=max((x['at'] for x in history if x.get('internet')=='Online'),default=None)

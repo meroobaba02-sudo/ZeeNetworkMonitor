@@ -23,6 +23,10 @@ jobs:
           python -m compileall -q main.py zee tests admin
           python -m pytest -q --junitxml=windows-tests.xml
           python -c "from zee.regionmap import load; load('assets/region_map.json.gz')"
+      - name: Record synthetic scheduling, UI and cleanup measurements
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python scripts/benchmark_phase3.py phase3-benchmark-windows.json
       - name: Build customer application and separate owner manager
         run: |
           python -m PyInstaller --clean --noconfirm ZeeNetworkMonitor.spec
@@ -54,7 +58,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         shell: pwsh
         run: |
-          $setup = Join-Path $PWD 'release/ZeeNetworkMonitor-Setup-Windows-v0.4.6.exe'
+          $setup = Join-Path $PWD 'release/ZeeNetworkMonitor-Setup-Windows-v0.4.7.exe'
           $install = Join-Path $env:LOCALAPPDATA 'Programs/ZeeNetworkMonitor'
           $data = Join-Path $env:LOCALAPPDATA 'ZeeNetworkMonitor'
           New-Item -ItemType Directory -Force $data | Out-Null
@@ -77,20 +81,20 @@ jobs:
         with:
           name: ZeeNetworkMonitor-Setup-Windows
           path: |
-            release/ZeeNetworkMonitor-Setup-Windows-v0.4.6.exe
+            release/ZeeNetworkMonitor-Setup-Windows-v0.4.7.exe
             release/INSTALLER_TEST_REPORT.txt
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeNetworkMonitor-Portable-Windows
-          path: release/ZeeNetworkMonitor-Portable-Windows-v0.4.6.zip
+          path: release/ZeeNetworkMonitor-Portable-Windows-v0.4.7.zip
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeLicenseManager-Admin
-          path: release/ZeeLicenseManager-Admin-v0.4.6.zip
+          path: release/ZeeLicenseManager-Admin-v0.4.7.zip
           if-no-files-found: error
           retention-days: 30
       - name: Upload test diagnostics
@@ -100,6 +104,7 @@ jobs:
           name: Windows-build-diagnostics
           path: |
             windows-tests.xml
+            phase3-benchmark-windows.json
             build/ZeeNetworkMonitor/warn-ZeeNetworkMonitor.txt
             ${{ runner.temp }}/zee-smoke/diagnostic.log
             release/INSTALLER_TEST_REPORT.txt
