@@ -1,8 +1,8 @@
-name: Build Windows portable application
+name: Build and test Professional Windows packages
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    branches: [main, master, 'professional/**']
 permissions:
   contents: read
 jobs:
@@ -16,17 +16,18 @@ jobs:
           architecture: x64
       - name: Install pinned dependencies
         run: python -m pip install -r requirements-build.txt
-      - name: Syntax and unit / GUI tests
+      - name: Syntax, unit, security and GUI integration tests
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          python -m compileall -q main.py zee tests
+          python -m compileall -q main.py zee tests admin
           python -m pytest -q --junitxml=windows-tests.xml
-      - name: Validate bundled requested starter map
-        run: python -c "from zee.regionmap import load; load('assets/region_map.json.gz')"
-      - name: Build portable EXE
-        run: python -m PyInstaller --clean --noconfirm ZeeNetworkMonitor.spec
-      - name: Frozen GUI startup and shutdown smoke test
+          python -c "from zee.regionmap import load; load('assets/region_map.json.gz')"
+      - name: Build customer application and separate owner manager
+        run: |
+          python -m PyInstaller --clean --noconfirm ZeeNetworkMonitor.spec
+          python -m PyInstaller --clean --noconfirm ZeeLicenseManager.spec
+      - name: Frozen application and owner-manager smoke tests
         env:
           QT_QPA_PLATFORM: offscreen
         shell: pwsh
@@ -35,17 +36,64 @@ jobs:
           $exe = Join-Path $PWD 'dist/ZeeNetworkMonitor/ZeeNetworkMonitor.exe'
           $process = Start-Process -FilePath $exe -ArgumentList @('--smoke-test', '--data-dir', $data) -PassThru
           if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Frozen app timed out' }
-          if ($process.ExitCode -ne 0) { throw 'Frozen app returned an error' }
-          if (-not (Test-Path (Join-Path $data 'smoke-ok.txt'))) { throw 'Smoke success marker missing' }
-      - name: Assemble portable ZIP with Windows test report
+          if ($process.ExitCode -ne 0 -or -not (Test-Path (Join-Path $data 'smoke-ok.txt'))) { throw 'Frozen smoke failed' }
+          $admin = Start-Process -FilePath 'dist/ZeeLicenseManager/ZeeLicenseManager.exe' -ArgumentList '--smoke-test' -PassThru
+          if (-not $admin.WaitForExit(60000)) { $admin.Kill(); throw 'Admin smoke timed out' }
+          if ($admin.ExitCode -ne 0) { throw 'Admin smoke failed' }
+      - name: Package and audit portable runtime contents
         run: python scripts/package_release.py
-      - name: Upload downloadable portable package
-        uses: actions/upload-artifact@v4
+      - name: Build per-user Windows installer
+        shell: pwsh
+        run: |
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { choco install innosetup --yes --no-progress }
+          & $iscc installer/ZeeNetworkMonitor.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
+      - name: Test install, shortcuts, launch, upgrade data preservation and uninstall
+        env:
+          QT_QPA_PLATFORM: offscreen
+        shell: pwsh
+        run: |
+          $setup = Join-Path $PWD 'release/ZeeNetworkMonitor-Setup-Windows-v0.4.0.exe'
+          $install = Join-Path $env:LOCALAPPDATA 'Programs/ZeeNetworkMonitor'
+          $data = Join-Path $env:LOCALAPPDATA 'ZeeNetworkMonitor'
+          New-Item -ItemType Directory -Force $data | Out-Null
+          'preserve' | Set-Content (Join-Path $data 'upgrade-test.txt')
+          $p = Start-Process $setup -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Installation failed' }
+          if (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Zee Network Monitor.lnk'))) { throw 'Desktop shortcut missing' }
+          if (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'Zee Network Monitor/Zee Network Monitor.lnk'))) { throw 'Start Menu shortcut missing' }
+          $p = Start-Process (Join-Path $install 'ZeeNetworkMonitor.exe') -ArgumentList '--smoke-test' -PassThru
+          if (-not $p.WaitForExit(60000)) { $p.Kill(); throw 'Installed app timed out' }
+          if ($p.ExitCode -ne 0 -or -not (Test-Path (Join-Path $data 'smoke-ok.txt'))) { throw 'Installed launch failed' }
+          $p = Start-Process $setup -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-' -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path (Join-Path $data 'monitor.sqlite3'))) { throw 'Upgrade failed' }
+          $p = Start-Process (Join-Path $install 'unins000.exe') -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Uninstall failed' }
+          if (-not (Test-Path (Join-Path $data 'upgrade-test.txt')) -or -not (Test-Path (Join-Path $data 'monitor.sqlite3'))) { throw 'Uninstall removed user data' }
+          if (Test-Path (Join-Path $install 'ZeeNetworkMonitor.exe')) { throw 'Uninstall left executable' }
+          'Install, desktop/Start Menu, installed launch, upgrade and uninstall passed on Windows Server 2022; physical Windows 10 untested.' | Set-Content release/INSTALLER_TEST_REPORT.txt
+      - uses: actions/upload-artifact@v4
         with:
-          name: ZeeNetworkMonitor-Windows-x64
-          path: ZeeNetworkMonitor-Windows-x64.zip
+          name: ZeeNetworkMonitor-Setup-Windows
+          path: |
+            release/ZeeNetworkMonitor-Setup-Windows-v0.4.0.exe
+            release/INSTALLER_TEST_REPORT.txt
+          if-no-files-found: error
           retention-days: 30
-      - name: Upload test and build diagnostics
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZeeNetworkMonitor-Portable-Windows
+          path: release/ZeeNetworkMonitor-Portable-Windows-v0.4.0.zip
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZeeLicenseManager-Admin
+          path: release/ZeeLicenseManager-Admin-v0.4.0.zip
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload test diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -54,4 +102,5 @@ jobs:
             windows-tests.xml
             build/ZeeNetworkMonitor/warn-ZeeNetworkMonitor.txt
             ${{ runner.temp }}/zee-smoke/diagnostic.log
+            release/INSTALLER_TEST_REPORT.txt
           if-no-files-found: ignore

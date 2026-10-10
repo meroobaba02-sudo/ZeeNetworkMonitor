@@ -234,7 +234,6 @@ class MapCanvas(QWidget):
             d=next(d for d in self.devices if d.id==self.drag_id)
             self.preview=(d.id,max(.04,min(.96,x)),max(.06,min(.88,y)))
             # Transient view-only position; probe snapshots remain unchanged.
-            from dataclasses import replace
             self.devices=[replace(item,map_x=self.preview[1],map_y=self.preview[2]) if item.id==d.id else item for item in self.devices]
         else:
             self.offset+=delta;self.press=event.position()

@@ -1,0 +1,13 @@
+# Baseline audit and upgrade scope
+
+Inspected baseline main commit 19bf8b8a161f0c7b998aea579ebf10a9240aeaac (v0.3.0). Recovery branch: baseline/v0.3.0-before-professional. The existing app is Python 3.11 on Windows, PySide6 6.8.3, SQLite WAL, per-user data, QThreadPool with eight ping workers. GitHub Actions windows-2022 installs pinned packages, runs pytest, builds a PyInstaller folder, starts the frozen offscreen GUI and uploads a portable ZIP. No installer existed. The source tree and public repository contain no configured customer credentials or actual customer IPs.
+
+Existing working features: editable devices, retained ping samples/events, CSV/backup, periodic and manual checks, stale handling, threshold alarms, repeating Windows buzzer, parent topology, grouped tower map, offline OSM region and manual map downloads. Initial full suite: 52 tests (Windows); two new Windows-specific tests are included in this release's expanded suite.
+
+Tower diagnosis: storage allowed multiple towers, but every new station started at the same centre coordinate. A hard four-device limit also prevented larger stations. New towers now get distinct positions and the device limit is removed. Small canvas icons show at most eight dishes; the radio selector exposes all associated records. Layout controls preserve user data; auto layout changes positions only.
+
+v0.4 uses schema 3. Migration backs up schema 2 before changes; schema 1 retains its pre-v030 backup. Page IDs default to My Network for previous records. Network page selection is an explicit monitoring scope, not a VLAN. Only the selected page runs checks; changing the page cancels scheduling and discards obsolete worker generations. This conservative mode avoids unrelated alarms when the laptop changes physical networks. Simultaneous independent page scheduling is not implemented.
+
+New modules: workspaces/page_controls, credentials, connections/windows_ping, telemetry/monitoring/professional, licensing/system_dialogs, mobile. Main-thread SQLite ownership is preserved; telemetry uses two separate worker slots and exponential backoff. Results are bounded and timestamps determine freshness. Unrecognized hardware remains unverified until a user verifies numeric OIDs or HTTPS fields for that firmware. No vendor firmware endpoint is guessed.
+
+Release classification: Professional owner-evaluation preview. Includes executable features and tests, but is not yet a fully commissioned commercial product. Firmware compatibility, real per-WAN routes, Windows 10 hardware, Android certificate trust, and customer issuer provisioning require deployment work. Full requirements/limits are recorded in PROFESSIONAL_GUIDE.md; do not describe this preview as final acceptance of every master-prompt item.

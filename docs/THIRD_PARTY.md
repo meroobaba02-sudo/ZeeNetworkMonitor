@@ -11,3 +11,6 @@ Portable folder packaging retains separate runtime libraries. Distributing a pub
 
 
 Map data © OpenStreetMap contributors, licensed ODbL 1.0. https://www.openstreetmap.org/copyright and https://opendatacommons.org/licenses/odbl/1-0/ . Road/river/place data fetched from Overpass; no raster tiles downloaded.
+
+
+Professional additions: cryptography (Apache-2.0/BSD), PySNMP (BSD-2-Clause), PyASN1 (BSD-2-Clause); see installed package licences. Inno Setup builds installer. Qt/PySide6 retain original licensing/distribution obligations. No vendor artwork or proprietary UISP assets are used.

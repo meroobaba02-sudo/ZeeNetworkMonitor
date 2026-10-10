@@ -23,10 +23,11 @@ def test_v1_upgrade_backs_up_existing_device_and_history(tmp_path):
 
 from pathlib import Path
 
-def test_max_four_radios_and_valid_tower(tmp_path):
+def test_unlimited_radios_and_valid_tower(tmp_path):
     store=Store(tmp_path/'db');tower=Station(name='Tower');store.save_station(tower)
     for i in range(4):store.save(Device(name=f'Radio {i}',host='localhost',station_id=tower.id,dish_side='Right' if i%2 else 'Left'))
-    with pytest.raises(ValueError):store.save(Device(name='Fifth',host='localhost',station_id=tower.id))
+    store.save(Device(name='Fifth',host='localhost',station_id=tower.id))
+    assert len(store.devices())==5
     with pytest.raises(ValueError):store.save(Device(name='Missing',host='localhost',station_id='missing'))
     store.save(replace(store.devices()[0],name='Edited'))
     store.close()
