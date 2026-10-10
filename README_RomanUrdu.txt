@@ -1,4 +1,4 @@
-ZEE NETWORK MONITOR PROFESSIONAL v0.4.10
+ZEE NETWORK MONITOR PROFESSIONAL v0.4.11
 
 WINDOWS PAR CHALANA
 Successful GitHub Actions run se Setup ya Portable artifact download karen.

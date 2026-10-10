@@ -3,7 +3,7 @@ import math,re,time,asyncio,json,base64,ipaddress
 from .connections import request,validate_url,service_check,connection
 METRICS={'signal_dbm','noise_dbm','snr_db','tx_ccq','rx_ccq','tx_mbps','rx_mbps','frequency_mhz','channel_width_mhz','uptime_s','ethernet_up','wireless_up','cpu_pct','memory_pct','in_octets','out_octets','counter_epoch'}
 DEFAULT_PROFILE={'method':'none','poll_seconds':30,'firmware_verified':False,'oids':{},'fields':{},'wan_verified':False,'internet_url':'','internet_marker':'','speed_url':'','speed_mb':1,'speed_seconds':5,'daily_mb':10,'automatic_speed':False,'speed_interval':900,'min_download_mbps':0,'loss_warning_pct':10,'signal_good':-60,'signal_poor':-80,'ccq_good':90,'ccq_poor':50,'snmp_version':'2c','rate_quality_enabled':False,'rate_good_mbps':100,'rate_poor_mbps':10,'internet_latency_warning_ms':1500,'service_alerts':False}
-DEFAULT_PROFILE.update(device_model='',firmware_version='',wan_interface='',wan_counter_verified=False)
+DEFAULT_PROFILE.update(upload_url='',upload_mb=1,speed_gateway='',device_model='',firmware_version='',wan_interface='',wan_counter_verified=False)
 
 def clean_metrics(metrics):
     """Reject invalid units/enums without inventing replacements; retain Counter64 precision."""
@@ -38,9 +38,12 @@ def validate_profile(p):
         if key in p and (not isinstance(p[key],str) or len(p[key])>120 or any(ord(c)<32 for c in p[key])):raise ValueError('Invalid '+key)
     if p.get('wan_counter_verified') and not p.get('wan_interface','').strip():raise ValueError('Name the verified WAN counter interface first.')
     if p.get('rate_poor_mbps',10)>=p.get('rate_good_mbps',100):raise ValueError('Good rate must be above poor rate.')
-    for key in ('url','internet_url','speed_url'):
+    if p.get('speed_gateway'):
+        from .wan_paths import literal
+        literal(p['speed_gateway'])
+    for key in ('url','internet_url','speed_url','upload_url'):
         if p.get(key):validate_url(p[key],('https',))
-    for key,low,high in [('poll_seconds',5,3600),('speed_mb',1,64),('speed_seconds',1,30),('daily_mb',1,1024),('speed_interval',900,86400),('snmp_port',1,65535),('rate_cap_kbps',0,1000000),('min_download_mbps',0,100000),('loss_warning_pct',0,100),('signal_good',-120,-1),('signal_poor',-130,-2),('ccq_good',1,100),('ccq_poor',0,99),('rate_good_mbps',0.01,100000),('rate_poor_mbps',0,99999),('internet_latency_warning_ms',1,60000)]:
+    for key,low,high in [('upload_mb',1,16),('poll_seconds',5,3600),('speed_mb',1,64),('speed_seconds',1,30),('daily_mb',1,1024),('speed_interval',900,86400),('snmp_port',1,65535),('rate_cap_kbps',0,1000000),('min_download_mbps',0,100000),('loss_warning_pct',0,100),('signal_good',-120,-1),('signal_poor',-130,-2),('ccq_good',1,100),('ccq_poor',0,99),('rate_good_mbps',0.01,100000),('rate_poor_mbps',0,99999),('internet_latency_warning_ms',1,60000)]:
         if key in p and (not isinstance(p[key],(int,float)) or not math.isfinite(p[key]) or not low<=p[key]<=high):raise ValueError('Invalid '+key)
     if p.get('signal_poor',-80)>=p.get('signal_good',-60) or p.get('ccq_poor',50)>=p.get('ccq_good',90):raise ValueError('Good thresholds must be above poor thresholds.')
     for key in ('oids','fields'):
@@ -135,10 +138,10 @@ def internet_check(p,source):
     code,body=request(p['internet_url'],source,max_bytes=4096)
     return 'Online' if code==200 and p['internet_marker'].encode() in body else 'Offline — external check failed'
 
-def speed_test(p,source='',cancel=None):
+def speed_test(p,source='',cancel=None,connection_fn=None):
     if not p.get('wan_verified') or not p.get('speed_url'):raise ValueError('Verify the WAN route and configure a controlled HTTPS download endpoint first.')
     limit=int(p.get('speed_mb',1)*1048576);seconds=p.get('speed_seconds',5);cap=p.get('rate_cap_kbps',0)*1024
-    c,path=connection(p['speed_url'],source,min(5,seconds));total=0;start=time.monotonic()
+    c,path=(connection_fn or connection)(p['speed_url'],source,min(5,seconds));total=0;start=time.monotonic()
     try:
         c.request('GET',path,headers={'Range':f'bytes=0-{limit-1}','Accept-Encoding':'identity'});r=c.getresponse()
         if r.status not in (200,206):raise ValueError('Speed endpoint rejected the request.')
@@ -152,3 +155,39 @@ def speed_test(p,source='',cancel=None):
         if not total:raise ValueError('Speed endpoint returned no data.')
         return {'download_mbps':total*8/max(.001,elapsed)/1e6,'bytes':total,'seconds':elapsed,'rate_kind':'Controlled download throughput'+(' (rate capped)' if cap else ''),'upload_note':'Upload test unavailable; router counters can measure upload traffic'}
     finally:c.close()
+
+
+def upload_test(p,source='',cancel=None,connection_fn=None):
+    """Bounded POST; only an exact receiver acknowledgement yields a measurement."""
+    if not p.get('wan_verified') or not p.get('upload_url'):raise ValueError('Configure an authorized HTTPS upload receiver first.')
+    limit=int(p.get('upload_mb',1)*1048576);seconds=p.get('speed_seconds',5)
+    c,path=(connection_fn or connection)(p['upload_url'],source,min(5,seconds))
+    start=time.monotonic();sent=0;chunk=b'Z'*16384
+    try:
+        if cancel and cancel.is_set():raise ValueError('Upload cancelled.')
+        c.putrequest('POST',path);c.putheader('Content-Type','application/octet-stream');c.putheader('Content-Length',str(limit));c.endheaders()
+        while sent<limit:
+            if (cancel and cancel.is_set()) or time.monotonic()-start>=seconds:raise ValueError('Upload cancelled or duration limit reached; no completed result.')
+            block=chunk[:min(len(chunk),limit-sent)];c.send(block);sent+=len(block)
+        r=c.getresponse();body=r.read(4097)
+        if time.monotonic()-start>seconds or (cancel and cancel.is_set()):raise ValueError('Upload acknowledgement outside test deadline.')
+        if r.status!=200 or len(body)>4096:raise ValueError('Upload receiver rejected the test.')
+        ack=json.loads(body).get('received_bytes')
+        if isinstance(ack,bool) or not isinstance(ack,int) or ack!=sent:raise ValueError('Upload receiver did not acknowledge the exact byte count.')
+        elapsed=time.monotonic()-start
+        return {'upload_mbps':sent*8/max(.001,elapsed)/1e6,'upload_bytes':sent,'upload_seconds':elapsed}
+    finally:c.close()
+
+
+def independent_speed_test(p,source='',cancel=None):
+    from .wan_paths import checked_factory,PathUnavailable
+    if not p.get('speed_gateway'):raise PathUnavailable('Set this modem Internet gateway in WAN setup. A ping IP alone cannot select its Internet path.')
+    evidence=[];factory=checked_factory(p['speed_gateway'],evidence)
+    result=speed_test(p,source,cancel,connection_fn=factory)
+    result['route_evidence']=evidence;result['path_checked']=True
+    if p.get('upload_url'):
+        try:
+            result.update(upload_test(p,source,cancel,connection_fn=factory));result.pop('upload_note',None)
+        except PathUnavailable as e:result['upload_note']=str(e)
+        except Exception:result['upload_note']='Upload unavailable: receiver, cancellation, deadline or acknowledgement failed.'
+    return result

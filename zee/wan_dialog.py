@@ -2,7 +2,7 @@
 from dataclasses import replace
 import time
 from PySide6.QtCore import QObject,Signal,QRunnable,QThreadPool
-from PySide6.QtWidgets import QDialog,QVBoxLayout,QFormLayout,QLineEdit,QSpinBox,QDoubleSpinBox,QCheckBox,QLabel,QTextEdit,QPushButton,QDialogButtonBox,QMessageBox
+from PySide6.QtWidgets import QDialog,QVBoxLayout,QFormLayout,QLineEdit,QSpinBox,QDoubleSpinBox,QCheckBox,QLabel,QTextEdit,QPushButton,QDialogButtonBox,QMessageBox,QScrollArea,QWidget
 from .telemetry import validate_profile
 from .wan import route_report
 
@@ -17,11 +17,11 @@ class RouteTask(QRunnable):
 class WanDialog(QDialog):
     def __init__(self,w,d):
         super().__init__(w);self.w=w;self.d=d;self.setWindowTitle('WAN setup / Windows route check');self.resize(760,740)
-        layout=QVBoxLayout(self);form=QFormLayout();layout.addLayout(form);self.fields={};p=d.integration
-        for key,title in [('internet_url','HTTPS Internet-check endpoint'),('internet_marker','Expected response text'),('speed_url','HTTPS download-test endpoint')]:
+        layout=QVBoxLayout(self);scroll=QScrollArea();scroll.setWidgetResizable(True);body=QWidget();form=QFormLayout(body);scroll.setWidget(body);layout.addWidget(scroll,2);self.fields={};p=d.integration
+        for key,title in [('internet_url','HTTPS Internet-check endpoint'),('internet_marker','Expected response text'),('speed_url','HTTPS download-test endpoint'),('upload_url','Authorized HTTPS upload receiver'),('speed_gateway','Modem Internet gateway IP (actual next hop)')]:
             edit=QLineEdit(p.get(key,''));self.fields[key]=edit;form.addRow(title,edit)
         self.source=QLineEdit(d.source or w.current_page().source_ip);form.addRow('Local source IP (blank = OS route)',self.source)
-        for key,title,low,high,default in [('poll_seconds','Check interval (seconds)',5,3600,30),('speed_mb','Download test limit (MiB)',1,64,1),('speed_seconds','Transfer duration limit (seconds)',1,30,5),('daily_mb','Daily test budget (MiB)',1,1024,10),('speed_interval','Automatic test interval (seconds)',900,86400,900),('rate_cap_kbps','Read-rate cap (KiB/s, 0 = none)',0,1000000,0),('internet_latency_warning_ms','HTTPS latency warning (ms)',1,60000,1500)]:
+        for key,title,low,high,default in [('poll_seconds','Check interval (seconds)',5,3600,30),('speed_mb','Download test limit (MiB)',1,64,1),('upload_mb','Upload test limit (MiB)',1,16,1),('speed_seconds','Transfer duration limit (seconds)',1,30,5),('daily_mb','Daily test budget (MiB)',1,1024,10),('speed_interval','Automatic test interval (seconds)',900,86400,900),('rate_cap_kbps','Read-rate cap (KiB/s, 0 = none)',0,1000000,0),('internet_latency_warning_ms','HTTPS latency warning (ms)',1,60000,1500)]:
             spin=QSpinBox();spin.setRange(low,high);spin.setValue(p.get(key,default));self.fields[key]=spin;form.addRow(title,spin)
         for key,title,high,default in [('min_download_mbps','Low measured download warning (Mbps)',100000,0),('loss_warning_pct','Router ping loss warning (%)',100,10)]:
             spin=QDoubleSpinBox();spin.setRange(0,high);spin.setValue(p.get(key,default));self.fields[key]=spin;form.addRow(title,spin)
@@ -29,11 +29,11 @@ class WanDialog(QDialog):
         self.verified=QCheckBox('I verified this source/interface/gateway reaches this specific WAN');self.verified.setChecked(p.get('wan_verified',False));form.addRow(self.verified)
         self.counter_interface=QLineEdit(p.get('wan_interface',''));form.addRow('WAN counter interface (e.g. actual port name)',self.counter_interface)
         self.counter_verified=QCheckBox('I verified these counters measure this WAN interface');self.counter_verified.setChecked(p.get('wan_counter_verified',False));form.addRow(self.counter_verified)
-        for key in ('internet_url','internet_marker','speed_url'):self.fields[key].textChanged.connect(lambda *_:self.verified.setChecked(False))
+        for key in ('internet_url','internet_marker','speed_url','upload_url','speed_gateway'):self.fields[key].textChanged.connect(lambda *_:self.verified.setChecked(False))
         self.source.textChanged.connect(lambda *_:self.verified.setChecked(False))
         self.counter_interface.textChanged.connect(lambda *_:self.counter_verified.setChecked(False))
         day=time.strftime('%Y-%m-%d');used=w.store.setting('speed-budget:'+d.id+':'+day,0)
-        note=QLabel(f'Today: {used/1048576:.2f} MiB reserved for tests. Failed tests retain the reservation. Upload is available through verified interface counters, not a controlled upload test. Router ping and external HTTPS status are separate. HTTPS latency includes connection/TLS/server time. Rate cap limits reads, not guaranteed wire bandwidth.');note.setWordWrap(True);layout.addWidget(note)
+        note=QLabel(f'Today: {used/1048576:.2f} MiB reserved for tests. Failed tests retain the reservation. Internet speeds tests verify the Windows next hop on each actual TLS socket. Upload receiver must acknowledge JSON received_bytes. Live traffic requires verified WAN counters. Browser tests use the laptop current connection. Router ping and external HTTPS status are separate. HTTPS latency includes connection/TLS/server time. Rate cap limits reads, not guaranteed wire bandwidth.');note.setWordWrap(True);layout.addWidget(note)
         self.check=QPushButton('Inspect Windows route / adapters (read-only)');self.check.clicked.connect(self.inspect);layout.addWidget(self.check)
         self.report=QTextEdit();self.report.setReadOnly(True);layout.addWidget(self.report,1)
         self.signals=Signals();self.signals.done.connect(self.finished_report)

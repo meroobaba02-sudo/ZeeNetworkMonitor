@@ -359,6 +359,8 @@ class Window(PageControls,QMainWindow):
         self.tabs.insertTab(0,self.map_page,'Map')
         from .professional import ProfessionalPanel
         self.pro_panel=ProfessionalPanel(self);self.tabs.addTab(self.pro_panel,'WAN / Radio')
+        from .seven_wan import SevenWanPanel
+        self.seven_wan=SevenWanPanel(self);self.tabs.addTab(self.seven_wan,'Internet speeds')
         self.page_picker=QComboBox();self.page_picker.setMaximumWidth(160);self.page_picker.currentIndexChanged.connect(self.change_page)
         self.navigation.addWidget(QLabel('NETWORK PAGE'));self.navigation.addWidget(self.page_picker)
         self.navigation.addWidget(button('Network setup / paths',self.network_setup))
@@ -370,7 +372,7 @@ class Window(PageControls,QMainWindow):
         self.navigation.addWidget(button('Manage networks',self.manage_pages))
         self.navigation.addWidget(button('Connect tower radios',self.connect_radios))
         self.nav_buttons=[]
-        for i,text in enumerate(['◉  Map','▤  Devices / WANs','◷  History','⌁  Topology','♧  Alerts','⚙  Settings','◈  WAN / Radio']):
+        for i,text in enumerate(['◉  Map','▤  Devices / WANs','◷  History','⌁  Topology','♧  Alerts','⚙  Settings','◈  WAN / Radio','⇅  Internet speeds']):
             b=QPushButton(text);b.setObjectName('nav');b.setCheckable(True);b.setFixedWidth(148)
             b.clicked.connect(lambda checked=False,index=i:self.tabs.setCurrentIndex(index))
             self.navigation.addWidget(b);self.nav_buttons.append(b)

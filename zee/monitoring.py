@@ -4,14 +4,22 @@ from PySide6.QtCore import QObject,Signal,QRunnable,QThreadPool,QTimer
 from . import telemetry
 from .connections import service_check
 
+def telemetry_path_error():
+    from .wan_paths import PathUnavailable
+    return PathUnavailable
+
+class CombinedCancel:
+    def __init__(self,*events):self.events=events
+    def is_set(self):return any(e.is_set() for e in self.events)
+
 class Signals(QObject):done=Signal(object,object)
 class Task(QRunnable):
-    def __init__(self,d,source,secrets,signals,speed,cancel,generation):
-        super().__init__();self.d=d;self.source=source;self.secrets=secrets;self.signals=signals;self.speed=speed;self.cancel=cancel;self.generation=generation
+    def __init__(self,d,source,secrets,signals,speed,cancel,generation,independent=False):
+        super().__init__();self.d=d;self.source=source;self.secrets=secrets;self.signals=signals;self.speed=speed;self.cancel=cancel;self.generation=generation;self.independent=independent
     def run(self):
         d=self.d;result={'at':time.time(),'metrics':{}}
         try:
-            if self.speed:result.update(telemetry.speed_test(d.integration,self.source,self.cancel))
+            if self.speed:result.update((telemetry.independent_speed_test if self.independent else telemetry.speed_test)(d.integration,self.source,self.cancel))
             else:
                 try:
                     metrics,method=telemetry.fetch_metrics(d,self.secrets,self.source);result.update(metrics=metrics,method=method)
@@ -25,6 +33,7 @@ class Task(QRunnable):
                         started=time.monotonic();result['internet']=telemetry.internet_check(d.integration,self.source)
                         if result['internet']=='Online':result['internet_latency_ms']=(time.monotonic()-started)*1000
                     except Exception:result['internet']='Unknown — TLS, route or external endpoint error'
+        except telemetry_path_error() as e:result['error']=str(e)
         except Exception:result['error']='Measurement unavailable — check route, endpoint, credentials and limits'
         result['at']=time.time();result['monotonic_at']=time.monotonic()
         result['source_ip']=self.source or 'Automatic (OS route)'
@@ -36,10 +45,10 @@ class Measurements(QObject):
     changed=Signal()
     def __init__(self,window,vault):
         super().__init__(window);self.window=window;self.vault=vault;self.pool=QThreadPool(self);self.pool.setMaxThreadCount(2)
-        self.pending={};self.due={};self.latest={};self.speed_latest={};self.failures={};self.cancel=threading.Event();self.enabled=False;self.limit=2
+        self.speed_cancels={};self.pending={};self.due={};self.latest={};self.speed_latest={};self.failures={};self.cancel=threading.Event();self.enabled=False;self.limit=2
         self.signals=Signals();self.signals.done.connect(self.complete)
         self.timer=QTimer(self);self.timer.timeout.connect(self.tick);self.timer.start(1000)
-    def submit(self,d,speed=False):
+    def submit(self,d,speed=False,independent=False):
         key=(d.id,speed)
         if self.cancel.is_set() or any(k[0]==d.id for k in self.pending) or len(self.pending)>=self.limit or not d.enabled or not d.host:return False
         page=self.window.page_for_device(d)
@@ -47,11 +56,13 @@ class Measurements(QObject):
         if (self.window.monitor_all_enabled or page.interface_hint or page.gateway_hint) and not page.routing_verified:return False
         if self.window.monitor_all_enabled and d.id in self.window.ambiguous_devices:return False
         p=d.integration
+        independent=independent or bool(speed and p.get('speed_gateway'))
         if speed:
             day=time.strftime('%Y-%m-%d');budgetkey='speed-budget:'+d.id+':'+day
-            used=self.window.store.setting(budgetkey,0);reservation=int(p.get('speed_mb',1)*1048576)
-            if used+reservation>p.get('daily_mb',10)*1048576:raise ValueError('Daily download test budget reached.')
+            used=self.window.store.setting(budgetkey,0);reservation=int((p.get('speed_mb',1)+(p.get('upload_mb',1) if independent and p.get('upload_url') else 0))*1048576)
+            if used+reservation>p.get('daily_mb',10)*1048576:raise ValueError('Daily speed-test data budget reached.')
             if not p.get('wan_verified') or not p.get('speed_url'):raise ValueError('Configure and verify a WAN-specific route and HTTPS speed endpoint first.')
+            if independent and not p.get('speed_gateway'):raise ValueError('Set this modem Internet gateway in WAN setup first.')
             # Reserve the maximum before starting: interrupted/failed tests cannot evade the budget.
             self.window.store.set_setting(budgetkey,used+reservation)
         page=self.window.page_for_device(d)
@@ -59,9 +70,15 @@ class Measurements(QObject):
         try:secrets=self.vault.get(d.id)
         except Exception:secrets={}
         self.pending[key]=d;self.due[key]=time.monotonic()+p.get('speed_interval',900) if speed else time.monotonic()+p.get('poll_seconds',30)
-        self.pool.start(Task(d,source,secrets,self.signals,speed,self.cancel,self.window.engine.generation));return True
+        task_cancel=self.cancel
+        if speed:
+            event=threading.Event();self.speed_cancels[d.id]=event;task_cancel=CombinedCancel(self.cancel,event)
+        task=Task(d,source,secrets,self.signals,speed,task_cancel,self.window.engine.generation)
+        task.independent=independent
+        self.pool.start(task);return True
     def complete(self,identity,result):
         d,speed,generation=identity;key=(d.id,speed);self.pending.pop(key,None)
+        if speed:self.speed_cancels.pop(d.id,None)
         if self.cancel.is_set() or generation!=self.window.engine.generation:return
         current=next((x for x in self.window.monitor_devices() if x.id==d.id),None)
         if current!=d:return
@@ -104,7 +121,9 @@ class Measurements(QObject):
             if d.integration.get('automatic_speed') and self.due.get((d.id,True),0)<=time.monotonic():
                 try:self.submit(d,True)
                 except ValueError:self.due[(d.id,True)]=time.monotonic()+900
-    def stop(self):self.enabled=False
+    def cancel_speeds(self):
+        for event in self.speed_cancels.values():event.set()
+    def stop(self):self.enabled=False;self.cancel_speeds()
     def configure(self,limit=2):
         self.limit=max(1,min(4,int(limit)));self.pool.setMaxThreadCount(self.limit)
     def shutdown(self):self.cancel.set();self.timer.stop();self.pool.clear();self.pool.waitForDone()

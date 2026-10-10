@@ -12,7 +12,7 @@ from .workspaces import WorkspaceStore,NetworkPage
 from .incidents import IncidentStore,SCHEMA as INCIDENT_SCHEMA
 from pathlib import Path
 
-VERSION = '0.4.10'
+VERSION = '0.4.11'
 TYPES = ['WAN / Internet', 'Rocket M5 / wireless radio', 'Router', 'Switch', 'CCTV / NVR / camera', 'Server / monitoring agent', 'Other']
 
 
