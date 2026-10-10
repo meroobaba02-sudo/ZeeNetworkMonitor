@@ -2,7 +2,7 @@
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules,collect_data_files
 root=Path(SPECPATH)
-a=Analysis([str(root/'main.py')],pathex=[str(root)],binaries=[],datas=[(str(root/'assets'),'assets')]+collect_data_files('pysnmp'),hiddenimports=collect_submodules('pysnmp'),hookspath=[],hooksconfig={},runtime_hooks=[],excludes=['PySide6.QtWebEngineCore','PySide6.QtWebEngineWidgets','PySide6.QtQml','PySide6.QtQuick','PySide6.QtNetwork','PySide6.QtMultimedia','PySide6.Qt3DCore'],noarchive=False)
+a=Analysis([str(root/'main.py')],pathex=[str(root)],binaries=[],datas=[(str(root/'assets'),'assets')]+collect_data_files('pysnmp'),hiddenimports=collect_submodules('pysnmp'),hookspath=[],hooksconfig={},runtime_hooks=[str(root/'hooks/rthook_snmp_mibs.py')],excludes=['PySide6.QtWebEngineCore','PySide6.QtWebEngineWidgets','PySide6.QtQml','PySide6.QtQuick','PySide6.QtNetwork','PySide6.QtMultimedia','PySide6.Qt3DCore'],noarchive=False)
 import sys
 sys.path.insert(0,str(root/'scripts'))
 from compile_runtime_mibs import compile_mibs

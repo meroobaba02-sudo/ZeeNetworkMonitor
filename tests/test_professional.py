@@ -183,8 +183,12 @@ def test_controlled_https_speed_and_external_check(tls_context,monkeypatch):
 def test_compiled_mib_loader_format(tmp_path):
     import sys
     from pysnmp.smi.builder import DirMibSource
+    from zee.snmp_runtime import install
+    install()
     sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
     from compile_runtime_mibs import compile_mibs
     source=tmp_path/'TEST.py';source.write_text('answer=42')
     entries=compile_mibs([('pysnmp/smi/mibs/TEST.py',str(source),'DATA')],tmp_path/'out')
     dest=Path(entries[0][1]);code,_=DirMibSource(str(dest.parent)).read('TEST');scope={};exec(code,scope);assert scope['answer']==42
+    import runpy
+    assert runpy.run_path(str(dest))['answer']==42
