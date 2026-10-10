@@ -85,4 +85,11 @@ def main():
         lock.unlock()
 
 if __name__=='__main__':
-    raise SystemExit(main())
+    try:
+        exit_code=main()
+    except Exception:
+        logging.exception('Customer build startup integrity check failed')
+        if '--smoke-test' not in sys.argv and QApplication.instance():
+            QMessageBox.critical(None,'Repair customer installation','Required signed customer build files could not be verified. Reinstall the reviewed customer package; do not replace issuer/profile files manually.')
+        exit_code=1
+    raise SystemExit(exit_code)
