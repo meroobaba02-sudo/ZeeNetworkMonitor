@@ -36,6 +36,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Customer EXE build failed" }
           python -m PyInstaller --clean --noconfirm ZeeLicenseManager.spec
           if ($LASTEXITCODE -ne 0) { throw "Owner utility build failed" }
+          python -m PyInstaller --clean --noconfirm ZeeAdminStudio.spec
+          if ($LASTEXITCODE -ne 0) { throw "Admin Studio EXE build failed" }
       - name: Frozen application and owner-manager smoke tests
         env:
           QT_QPA_PLATFORM: offscreen
@@ -49,6 +51,10 @@ jobs:
           $admin = Start-Process -FilePath 'dist/ZeeLicenseManager/ZeeLicenseManager.exe' -ArgumentList '--smoke-test' -PassThru
           if (-not $admin.WaitForExit(60000)) { $admin.Kill(); throw 'Admin smoke timed out' }
           if ($admin.ExitCode -ne 0) { throw 'Admin smoke failed' }
+          $studioData = Join-Path $env:RUNNER_TEMP 'zee-studio-smoke'
+          $studio = Start-Process -FilePath 'dist/ZeeAdminStudio/ZeeAdminStudio.exe' -ArgumentList @('--smoke-test','--data-dir',$studioData) -PassThru
+          if (-not $studio.WaitForExit(60000)) { $studio.Kill(); throw 'Admin Studio smoke timed out' }
+          if ($studio.ExitCode -ne 0 -or -not (Test-Path (Join-Path $studioData 'studio-smoke-ok.txt'))) { throw 'Admin Studio smoke failed' }
       - name: Package and audit portable runtime contents
         run: python scripts/package_release.py
       - name: Build per-user Windows installer
@@ -63,7 +69,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         shell: pwsh
         run: |
-          $setup = Join-Path $PWD 'release/ZeeNetworkMonitor-Setup-Windows-v0.4.12.exe'
+          $setup = Join-Path $PWD 'release/ZeeNetworkMonitor-Setup-Windows-v0.4.13.exe'
           $install = Join-Path $env:LOCALAPPDATA 'Programs/ZeeNetworkMonitor'
           $data = Join-Path $env:LOCALAPPDATA 'ZeeNetworkMonitor'
           New-Item -ItemType Directory -Force $data | Out-Null
@@ -86,20 +92,26 @@ jobs:
         with:
           name: ZeeNetworkMonitor-Setup-Windows
           path: |
-            release/ZeeNetworkMonitor-Setup-Windows-v0.4.12.exe
+            release/ZeeNetworkMonitor-Setup-Windows-v0.4.13.exe
             release/INSTALLER_TEST_REPORT.txt
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeNetworkMonitor-Portable-Windows
-          path: release/ZeeNetworkMonitor-Portable-Windows-v0.4.12.zip
+          path: release/ZeeNetworkMonitor-Portable-Windows-v0.4.13.zip
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeLicenseManager-Admin
-          path: release/ZeeLicenseManager-Admin-v0.4.12.zip
+          path: release/ZeeLicenseManager-Admin-v0.4.13.zip
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZeeAdminStudio-Owner
+          path: release/ZeeAdminStudio-Owner-v0.4.13.zip
           if-no-files-found: error
           retention-days: 30
       - name: Upload test diagnostics

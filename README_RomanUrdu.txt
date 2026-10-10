@@ -1,4 +1,4 @@
-ZEE NETWORK MONITOR PROFESSIONAL v0.4.12
+ZEE NETWORK MONITOR PROFESSIONAL v0.4.13
 
 WINDOWS PAR CHALANA
 Successful GitHub Actions run se Setup ya Portable artifact download karen.
@@ -75,3 +75,5 @@ Purana software chalana ho to schema 3 backup bhi restore karna zaroori hai.
 Details: PHASE6_INCIDENTS.md.
 
 Phase 7: App khulne par Overview dashboard milega. Internet speeds mein saat modem rows hain. Advanced controls se extra setup options dikhen ge. Settings se Dark/Light theme badal sakte hain. Ctrl+1 Overview, Ctrl+2 Map, Ctrl+3 Devices, Ctrl+4 Internet speeds, Ctrl+F device search. Advanced controls admin permission nahi hain; separate Admin Studio aglay phase mein hai.
+
+Phase 8.1: ZeeAdminStudio-Owner ZIP poori extract karein, phir ZeeAdminStudio.exe chalayein. Local owner username aur 12+ character password banayein. Customers, packages, reviewed profiles aur signed licences kaam karte hain. Planned package limits/custom branding abhi customer EXE par apply nahi hoti; ye Phase 8.2 hai. Purana issuer ho to naya key banane se pehle encrypted recovery PEM import karein. Private keys/passwords kabhi GitHub par na bhejein.
