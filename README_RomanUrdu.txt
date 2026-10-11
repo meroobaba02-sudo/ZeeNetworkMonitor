@@ -1,4 +1,4 @@
-ZEE NETWORK MONITOR v0.5.2 — MONITORING TEST BUILD
+ZEE NETWORK MONITOR v0.5.3 — MONITORING TEST BUILD
 
 Filhal Admin Studio aur licence ka kaam paused hai. Normal owner preview ko pehle se activation ki zaroorat nahi. Existing signed builds ki licence protection unchanged hai. Sirf Network Monitor Setup install karen.
 
@@ -23,4 +23,6 @@ Details NOC_GUI_v050.md.
 
 v0.5.1: Discovery mein pehle apna adapter/range select karein aur authorization tick karein; remote range ke liye confirmation zaroori hai. TCP, DNS, CSV export, remote stations aur session rediscovery optional hain. Alignment mein verified telemetry set karein, Test telemetry dabayein, baseline ke 3 samples lein, phir chhota manual adjustment record karein. RSSI akela perfect alignment ka saboot nahin. Details: DISCOVERY_ALIGNMENT_v051.md.
 
-v0.5.2: Network Discovery > Scan all connected networks. IP select kiye baghair detected connected IPv4 subnets/source list confirm karein. Found now, Identified only aur All checked alag tabs hain; source/subnet ke sath Add Selected aur CSV export hain. Bari ranges skipped dikhengi; remote ranges alag permission se scan hongi. Details: DISCOVERY_ALL_NETWORKS_v052.md.
+v0.5.3: Network Discovery > Scan all connected networks. IP select kiye baghair detected connected IPv4 subnets/source list confirm karein. Found now, Identified only aur All checked alag tabs hain; source/subnet ke sath Add Selected aur CSV export hain. Bari ranges skipped dikhengi; remote ranges alag permission se scan hongi. Details: DISCOVERY_ALL_NETWORKS_v052.md.
+
+v0.5.3: Internet Monitor > Wateen modem > Setup / Details > Wateen setup. Source 58.27.163.141 aur gateway 58.27.163.137 confirm kar ke Save, phir Start Test. Download/upload app ke andar; Windows IP/route change nahi hota. Details: WATEEN_SPEED_v053.md.

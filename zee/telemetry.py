@@ -3,7 +3,7 @@ import math,re,time,asyncio,json,base64,ipaddress
 from .connections import request,validate_url,service_check,connection
 METRICS={'gps_latitude','gps_longitude','heading_deg','elevation_deg','signal_chain0_dbm','signal_chain1_dbm','signal_dbm','noise_dbm','snr_db','tx_ccq','rx_ccq','tx_mbps','rx_mbps','frequency_mhz','channel_width_mhz','uptime_s','ethernet_up','wireless_up','cpu_pct','memory_pct','in_octets','out_octets','counter_epoch'}
 DEFAULT_PROFILE={'method':'none','poll_seconds':30,'firmware_verified':False,'oids':{},'fields':{},'wan_verified':False,'internet_url':'','internet_marker':'','speed_url':'','speed_mb':1,'speed_seconds':5,'daily_mb':10,'automatic_speed':False,'speed_interval':900,'min_download_mbps':0,'loss_warning_pct':10,'signal_good':-60,'signal_poor':-80,'ccq_good':90,'ccq_poor':50,'snmp_version':'2c','rate_quality_enabled':False,'rate_good_mbps':100,'rate_poor_mbps':10,'internet_latency_warning_ms':1500,'service_alerts':False}
-DEFAULT_PROFILE.update(upload_url='',upload_mb=1,speed_gateway='',device_model='',firmware_version='',wan_interface='',wan_counter_verified=False)
+DEFAULT_PROFILE.update(upload_url='',upload_mb=1,speed_gateway='',device_model='',firmware_version='',wan_interface='',wan_counter_verified=False,upload_protocol='exact-ack')
 
 def clean_metrics(metrics):
     """Reject invalid units/enums without inventing replacements; retain Counter64 precision."""
@@ -32,6 +32,8 @@ def validate_profile(p):
     if set(p)-set(DEFAULT_PROFILE)-{'url','snmp_port','allow_v2c','rate_cap_kbps'}:raise ValueError('Unknown integration setting; secrets belong in the protected credential fields.')
     if p.get('method','none') not in ('none','snmp','https-json'):raise ValueError('Unsupported adapter.')
     if p.get('snmp_version','2c') not in ('1','2c'):raise ValueError('SNMP version must be 1 or 2c.')
+    if p.get('upload_protocol','exact-ack') not in ('exact-ack','cloudflare'):raise ValueError('Unsupported upload protocol.')
+    if p.get('upload_protocol')=='cloudflare' and p.get('upload_url')!='https://speed.cloudflare.com/__up':raise ValueError('Cloudflare upload protocol requires its exact HTTPS endpoint.')
     for key in ('rate_quality_enabled','allow_v2c','service_alerts','firmware_verified','wan_verified','wan_counter_verified','automatic_speed'):
         if key in p and not isinstance(p[key],bool):raise ValueError(key+' must be true or false.')
     for key in ('device_model','firmware_version','wan_interface'):
@@ -144,7 +146,7 @@ def speed_test(p,source='',cancel=None,connection_fn=None):
     c,path=(connection_fn or connection)(p['speed_url'],source,min(5,seconds));total=0;start=time.monotonic()
     try:
         c.request('GET',path,headers={'Range':f'bytes=0-{limit-1}','Accept-Encoding':'identity'});r=c.getresponse()
-        if r.status not in (200,206):raise ValueError('Speed endpoint rejected the request.')
+        if r.status not in (200,206):raise ValueError('Download endpoint rejected the request (HTTP '+str(r.status)+').')
         while total<limit and time.monotonic()-start<seconds and not (cancel and cancel.is_set()):
             data=r.read(min(16384,limit-total))
             if not data:break
@@ -158,8 +160,10 @@ def speed_test(p,source='',cancel=None,connection_fn=None):
 
 
 def upload_test(p,source='',cancel=None,connection_fn=None):
-    """Bounded POST; only an exact receiver acknowledgement yields a measurement."""
+    """Bounded POST: exact custom acknowledgement or documented Cloudflare completion."""
     if not p.get('wan_verified') or not p.get('upload_url'):raise ValueError('Configure an authorized HTTPS upload receiver first.')
+    protocol=p.get('upload_protocol','exact-ack')
+    if protocol not in ('exact-ack','cloudflare') or (protocol=='cloudflare' and p['upload_url']!='https://speed.cloudflare.com/__up'):raise ValueError('Invalid upload receiver protocol.')
     limit=int(p.get('upload_mb',1)*1048576);seconds=p.get('speed_seconds',5)
     c,path=(connection_fn or connection)(p['upload_url'],source,min(5,seconds))
     start=time.monotonic();sent=0;chunk=b'Z'*16384
@@ -171,11 +175,12 @@ def upload_test(p,source='',cancel=None,connection_fn=None):
             block=chunk[:min(len(chunk),limit-sent)];c.send(block);sent+=len(block)
         r=c.getresponse();body=r.read(4097)
         if time.monotonic()-start>seconds or (cancel and cancel.is_set()):raise ValueError('Upload acknowledgement outside test deadline.')
-        if r.status!=200 or len(body)>4096:raise ValueError('Upload receiver rejected the test.')
-        ack=json.loads(body).get('received_bytes')
-        if isinstance(ack,bool) or not isinstance(ack,int) or ack!=sent:raise ValueError('Upload receiver did not acknowledge the exact byte count.')
+        if r.status!=200 or len(body)>4096:raise ValueError('Upload receiver rejected the test (HTTP '+str(r.status)+').')
+        if protocol=='exact-ack':
+            ack=json.loads(body).get('received_bytes')
+            if isinstance(ack,bool) or not isinstance(ack,int) or ack!=sent:raise ValueError('Upload receiver did not acknowledge the exact byte count.')
         elapsed=time.monotonic()-start
-        return {'upload_mbps':sent*8/max(.001,elapsed)/1e6,'upload_bytes':sent,'upload_seconds':elapsed}
+        return {'upload_mbps':sent*8/max(.001,elapsed)/1e6,'upload_bytes':sent,'upload_seconds':elapsed,'upload_method':'Cloudflare completed HTTPS POST' if protocol=='cloudflare' else 'Exact-byte receiver acknowledgement'}
     finally:c.close()
 
 
@@ -189,5 +194,6 @@ def independent_speed_test(p,source='',cancel=None):
         try:
             result.update(upload_test(p,source,cancel,connection_fn=factory));result.pop('upload_note',None)
         except PathUnavailable as e:result['upload_note']=str(e)
+        except ValueError as e:result['upload_note']='Upload unavailable: '+str(e)
         except Exception:result['upload_note']='Upload unavailable: receiver, cancellation, deadline or acknowledgement failed.'
     return result
