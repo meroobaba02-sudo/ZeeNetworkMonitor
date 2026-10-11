@@ -1,4 +1,4 @@
-name: Build and test Professional Windows packages
+name: Build and test monitoring-only Windows package
 on:
   workflow_dispatch:
   push:
@@ -34,31 +34,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Scheduling benchmark failed" }
           python scripts/benchmark_phase10.py phase10-benchmark-windows.json
           if ($LASTEXITCODE -ne 0) { throw "Pilot benchmark failed" }
-      - name: Build customer application and separate owner manager
-        run: |
-          python -m PyInstaller --clean --noconfirm ZeeNetworkMonitor.spec
-          if ($LASTEXITCODE -ne 0) { throw "Customer EXE build failed" }
-          python -m PyInstaller --clean --noconfirm ZeeLicenseManager.spec
-          if ($LASTEXITCODE -ne 0) { throw "Owner utility build failed" }
-          python -m PyInstaller --clean --noconfirm ZeeAdminStudio.spec
-          if ($LASTEXITCODE -ne 0) { throw "Admin Studio EXE build failed" }
-      - name: Frozen application and owner-manager smoke tests
+      - name: Build monitoring application only
+        run: python -m PyInstaller --clean --noconfirm ZeeNetworkMonitor.spec
+      - name: Verify existing owner-preview startup and preserved enforcement
         env:
           QT_QPA_PLATFORM: offscreen
-        shell: pwsh
-        run: |
-          $data = Join-Path $env:RUNNER_TEMP 'zee-smoke'
-          $exe = Join-Path $PWD 'dist/ZeeNetworkMonitor/ZeeNetworkMonitor.exe'
-          $process = Start-Process -FilePath $exe -ArgumentList @('--smoke-test', '--data-dir', $data) -PassThru
-          if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Frozen app timed out' }
-          if ($process.ExitCode -ne 0 -or -not (Test-Path (Join-Path $data 'smoke-ok.txt'))) { throw 'Frozen smoke failed' }
-          $admin = Start-Process -FilePath 'dist/ZeeLicenseManager/ZeeLicenseManager.exe' -ArgumentList '--smoke-test' -PassThru
-          if (-not $admin.WaitForExit(60000)) { $admin.Kill(); throw 'Admin smoke timed out' }
-          if ($admin.ExitCode -ne 0) { throw 'Admin smoke failed' }
-          $studioData = Join-Path $env:RUNNER_TEMP 'zee-studio-smoke'
-          $studio = Start-Process -FilePath 'dist/ZeeAdminStudio/ZeeAdminStudio.exe' -ArgumentList @('--smoke-test','--data-dir',$studioData) -PassThru
-          if (-not $studio.WaitForExit(60000)) { $studio.Kill(); throw 'Admin Studio smoke timed out' }
-          if ($studio.ExitCode -ne 0 -or -not (Test-Path (Join-Path $studioData 'studio-smoke-ok.txt'))) { throw 'Admin Studio smoke failed' }
+        run: python scripts/verify_monitoring_runtime.py
       - name: Verify frozen field-pilot panel and safe defaults
         env:
           QT_QPA_PLATFORM: offscreen
@@ -72,18 +53,17 @@ jobs:
           if (-not (Test-Path $iscc)) { choco install innosetup --yes --no-progress }
           & $iscc installer/ZeeNetworkMonitor.iss
           if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
-          & $iscc installer/ZeeAdminStudio.iss
-          if ($LASTEXITCODE -ne 0) { throw 'Studio installer build failed' }
       - name: Test install, shortcuts, launch, upgrade data preservation and uninstall
         env:
           QT_QPA_PLATFORM: offscreen
         shell: pwsh
         run: |
-          $setup = Join-Path $PWD 'release/ZeeNetworkMonitor-Setup-Windows-v0.4.17.exe'
+          $setup = Join-Path $PWD 'release/ZeeNetworkMonitor-Setup-Windows-v0.4.18.exe'
           $install = Join-Path $env:LOCALAPPDATA 'Programs/ZeeNetworkMonitor'
           $data = Join-Path $env:LOCALAPPDATA 'ZeeNetworkMonitor'
           New-Item -ItemType Directory -Force $data | Out-Null
           'preserve' | Set-Content (Join-Path $data 'upgrade-test.txt')
+          'old activation fixture' | Set-Content (Join-Path $data 'license.json')
           $p = Start-Process $setup -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw 'Installation failed' }
           if (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Zee Network Monitor.lnk'))) { throw 'Desktop shortcut missing' }
@@ -96,51 +76,21 @@ jobs:
           $p = Start-Process (Join-Path $install 'unins000.exe') -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw 'Uninstall failed' }
           if (-not (Test-Path (Join-Path $data 'upgrade-test.txt')) -or -not (Test-Path (Join-Path $data 'monitor.sqlite3'))) { throw 'Uninstall removed user data' }
+          if ((Get-Content (Join-Path $data 'license.json')).Trim() -ne 'old activation fixture') { throw 'Old activation record changed' }
           if (Test-Path (Join-Path $install 'ZeeNetworkMonitor.exe')) { throw 'Uninstall left executable' }
           'Install, desktop/Start Menu, installed launch, upgrade and uninstall passed on Windows Server 2022; physical Windows 10 untested.' | Set-Content release/INSTALLER_TEST_REPORT.txt
-      - name: Test separate Admin Studio installer
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: python scripts/windows_install_acceptance.py
-      - name: Verify disposable signed customer build and activation
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: |
-          python scripts/verify_customer_build.py
-          if ($LASTEXITCODE -ne 0) { throw "Customer build integration failed" }
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeNetworkMonitor-Setup-Windows
           path: |
-            release/ZeeNetworkMonitor-Setup-Windows-v0.4.17.exe
+            release/ZeeNetworkMonitor-Setup-Windows-v0.4.18.exe
             release/INSTALLER_TEST_REPORT.txt
-            release/CUSTOMER_BUILD_TEST_REPORT.txt
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeNetworkMonitor-Portable-Windows
-          path: release/ZeeNetworkMonitor-Portable-Windows-v0.4.17.zip
-          if-no-files-found: error
-          retention-days: 30
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ZeeLicenseManager-Admin
-          path: release/ZeeLicenseManager-Admin-v0.4.17.zip
-          if-no-files-found: error
-          retention-days: 30
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ZeeAdminStudio-Owner
-          path: release/ZeeAdminStudio-Owner-v0.4.17.zip
-          if-no-files-found: error
-          retention-days: 30
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ZeeAdminStudio-Setup-Windows
-          path: |
-            release/ZeeAdminStudio-Setup-Windows-v0.4.17.exe
-            release/STUDIO_INSTALLER_TEST_REPORT.txt
+          path: release/ZeeNetworkMonitor-Portable-Windows-v0.4.18.zip
           if-no-files-found: error
           retention-days: 30
       - name: Upload test diagnostics
@@ -153,9 +103,6 @@ jobs:
             phase3-benchmark-windows.json
             phase10-benchmark-windows.json
             build/ZeeNetworkMonitor/warn-ZeeNetworkMonitor.txt
-            release/CUSTOMER_BUILD_FAILURE.log
-            release/CUSTOMER_BUILD_TEST_REPORT.txt
             ${{ runner.temp }}/zee-smoke/diagnostic.log
             release/INSTALLER_TEST_REPORT.txt
-            release/STUDIO_INSTALLER_TEST_REPORT.txt
           if-no-files-found: ignore

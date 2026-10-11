@@ -7,7 +7,7 @@ import sys
 import traceback
 from PySide6.QtCore import QTimer, QLockFile
 from PySide6.QtGui import QIcon,QPixmap,QColor,QGuiApplication
-from PySide6.QtWidgets import QApplication, QMessageBox,QSplashScreen
+from PySide6.QtWidgets import QApplication, QMessageBox,QSplashScreen,QPushButton
 from zee.core import Store
 from zee.gui import Window, STYLE
 
@@ -63,6 +63,7 @@ def main():
             if not status(base)['valid']:window.close();return 3
             window.check_licence() # Apply the newly imported package before showing the dashboard.
         window.show()
+        licence_timer_active=window.license_timer.isActive()
         if args.smoke_test:
             if args.pilot_smoke_test:
                 from zee.pilot_dialog import PilotDialog
@@ -81,7 +82,7 @@ def main():
             import json
             from zee.licensing import customer_profile,EXPECTED_PROFILE_SHA256,REQUIRE_ISSUER
             profile=customer_profile()
-            (base/'customer-build-smoke.json').write_text(json.dumps({'title':window.windowTitle(),'branding':window.branding,'profile_id':profile['profile_id'] if profile else None,'require_issuer':REQUIRE_ISSUER,'profile_digest':EXPECTED_PROFILE_SHA256,'licence':status(base),'device_limit':window.policy.max_devices,'features':sorted(window.policy.features)}),encoding='utf-8')
+            (base/'customer-build-smoke.json').write_text(json.dumps({'title':window.windowTitle(),'branding':window.branding,'profile_id':profile['profile_id'] if profile else None,'require_issuer':REQUIRE_ISSUER,'profile_digest':EXPECTED_PROFILE_SHA256,'licence':status(base),'device_limit':window.policy.max_devices,'features':sorted(window.policy.features),'monitoring_preview':window.monitoring_preview,'licence_timer_active':licence_timer_active,'activation_controls_present':any(button.text()=='Licence / activation' for button in window.findChildren(QPushButton))}),encoding='utf-8')
             (base/'smoke-ok.txt').write_text('GUI startup and graceful shutdown passed.\n',encoding='utf-8')
         return 1 if failures else code
     except Exception:

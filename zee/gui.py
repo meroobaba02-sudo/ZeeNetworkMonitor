@@ -231,7 +231,9 @@ class Window(PageControls,QMainWindow):
         self.store=store
         from .licensing import status,customer_profile,branding
         from .entitlements import from_status
-        self.branding=branding();self.policy=from_status(status(store.path.parent),customer_profile());store.policy=self.policy
+        runtime_state=status(store.path.parent)
+        self.monitoring_preview=runtime_state.get('valid',False) and not runtime_state.get('production',True)
+        self.branding=branding();self.policy=from_status(runtime_state,customer_profile());store.policy=self.policy
         self.store.suspend_incidents()
         self.page_id=store.setting('active_page','default')
         self.page_snapshot=self.current_page()
@@ -564,6 +566,7 @@ class Window(PageControls,QMainWindow):
         row=QHBoxLayout();row.addWidget(button('Save alert / history settings',self.save_settings,True));row.addWidget(button('Clean expired records now',lambda:self.prune(manual=True)));row.addWidget(button('Test buzzer',self.test_buzzer));form.addRow(row)
         tools=QGroupBox('Setup, backup & support');grid=QGridLayout(tools);layout.addWidget(tools)
         actions=[('Real-network pilot / support report',self.pilot_dialog),('Network setup / paths',self.network_setup),('Manage networks',self.manage_pages),('Connect tower radios',self.connect_radios),('Backup database',self.backup),('Restore backup and close',self.restore_database),('Advanced monitoring / history',self.performance_dialog),('Help / About',self.help_about),('Licence / activation',self.license_dialog),('Mobile HTTPS dashboard',self.mobile_dialog),('Add WAN templates',self.wan_templates),('Verify offline installer update',self.verify_offline_update)]
+        if self.monitoring_preview:actions=[(title,fn) for title,fn in actions if title not in ('Licence / activation','Verify offline installer update')]
         for i,(title,fn) in enumerate(actions):grid.addWidget(button(title,fn),i//2,i%2)
         info=QLabel(self.branding['app_name']+' • '+self.branding['watermark']+'\nDatabase: '+str(self.store.path)+'\nActual modem/radio profiles and Windows Internet paths require verification on your network.');info.setWordWrap(True);layout.addWidget(info);layout.addStretch();self.tabs.addTab(page,'Settings & scope')
 
