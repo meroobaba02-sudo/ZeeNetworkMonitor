@@ -31,7 +31,7 @@ class IntegrationDialog(QDialog):
         super().__init__(window);self.window=window;self.d=d;self.setWindowTitle('Secure access / telemetry / WAN');self.resize(700,670)
         outer=QVBoxLayout(self);scroll=QScrollArea();scroll.setWidgetResizable(True);body=QWidget();scroll.setWidget(body);outer.addWidget(scroll,1);layout=QVBoxLayout(body);form=QFormLayout();layout.addLayout(form)
         self.method=QComboBox();self.method.addItems(['none','snmp','https-json']);self.method.setCurrentText(d.integration.get('method','none'));form.addRow('Measurement method',self.method)
-        self.snmp_version=QComboBox();self.snmp_version.addItems(['1','2c']);self.snmp_version.setCurrentText(d.integration.get('snmp_version','2c'));form.addRow('SNMP version (airOS guide: v1)',self.snmp_version)
+        self.snmp_version=QComboBox();self.snmp_version.addItems(['1','2c']);self.snmp_version.setCurrentText(d.integration.get('snmp_version','2c'));form.addRow('SNMP version (verify actual firmware)',self.snmp_version)
         self.poll_seconds=QSpinBox();self.poll_seconds.setRange(5,3600);self.poll_seconds.setValue(d.integration.get('poll_seconds',30));form.addRow('Polling interval (seconds)',self.poll_seconds)
         self.trusted=QCheckBox('Allow unencrypted SNMP on my trusted management network');self.trusted.setChecked(d.integration.get('allow_v2c',False));form.addRow(self.trusted)
         self.model=QLineEdit(d.integration.get('device_model',''));form.addRow('Actual device model (optional record)',self.model)
@@ -40,6 +40,7 @@ class IntegrationDialog(QDialog):
         self.password=QLineEdit();self.password.setEchoMode(QLineEdit.Password);self.password.setPlaceholderText('Blank keeps existing password');form.addRow('Password (Windows protected)',self.password)
         self.community=QLineEdit();self.community.setEchoMode(QLineEdit.Password);self.community.setPlaceholderText('Blank keeps existing read-only community');form.addRow('SNMP community (Windows protected)',self.community)
         self.remove=QCheckBox('Delete all saved credentials for this device');form.addRow(self.remove)
+        self.access_test=QPushButton('Test SNMP access (no signal mapping required)');self.access_test.clicked.connect(self.test_snmp_access);form.addRow(self.access_test)
         text=QLabel('No automatic browser login. SNMP v1/v2c community travels unencrypted: enable only on a trusted management network. HTTPS JSON uses validated TLS and sends credentials only to the configured device host. Never enter secrets in the JSON below.');text.setWordWrap(True);layout.addWidget(text)
         self.profile=QTextEdit();self.profile.setPlainText(json.dumps(DEFAULT_PROFILE|d.integration,indent=2));layout.addWidget(self.profile)
         self.profile_verified=QCheckBox('I checked this metric mapping against the actual model / firmware');self.profile_verified.setChecked(d.integration.get('firmware_verified',False));layout.addWidget(self.profile_verified)
@@ -48,6 +49,18 @@ class IntegrationDialog(QDialog):
         for combo in (self.method,self.snmp_version):combo.currentTextChanged.connect(lambda *_:self.profile_verified.setChecked(False))
         helptext=QLabel('Adapter method: none / snmp / https-json. oids or fields: {"signal_dbm": {"path": "verified numeric OID or JSON/key", "scale": 1}}. Verify model/firmware before setting firmware_verified. WAN checks need wan_verified, HTTPS internet_url and internet_marker. Top controls set method, SNMP version and interval. Numeric OIDs still need verification; no model profile is guessed. Speed tests are OFF by default. See PROFESSIONAL_GUIDE.');helptext.setWordWrap(True);layout.addWidget(helptext)
         box=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);box.accepted.connect(self.accept);box.rejected.connect(self.reject);outer.addWidget(box)
+    def test_snmp_access(self):
+        if not self.trusted.isChecked():QMessageBox.warning(self,'Trusted network required','Enable read-only SNMP testing only on your trusted management network.');return
+        if self.remove.isChecked():QMessageBox.warning(self,'Credentials marked for deletion','Clear Delete credentials before testing.');return
+        if not self.window.permit_device(self.d):QMessageBox.warning(self,'Device permission','This device is not permitted for monitoring by the current package.');return
+        try:
+            community=self.community.text() or self.window.vault.get(self.d.id).get('community','')
+            if not community:raise ValueError('Enter or save the device read-only community first.')
+            profile=json.loads(self.profile.toPlainText());validate_profile(profile)
+            page=self.window.current_page();source=self.d.source or (page.source_ip if page and page.id==self.d.page_id else '')
+            from .snmp_access_dialog import AccessDialog
+            AccessDialog(self,self.d.host,community,source,int(profile.get('snmp_port',161))).exec()
+        except (ValueError,RuntimeError,OSError):QMessageBox.warning(self,'Access test unavailable','Check the device IP, profile JSON and protected community storage.')
     def accept(self):
         try:
             profile=json.loads(self.profile.toPlainText())
