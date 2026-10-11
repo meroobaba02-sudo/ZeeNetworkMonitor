@@ -1,6 +1,6 @@
 # Zee Network Monitor
 
-Windows desktop network monitor for towers, radios, WAN links and camera services. Current customer GUI release: **0.5.1**, monitoring development owner preview; existing licence enforcement unchanged.
+Windows desktop network monitor for towers, radios, WAN links and camera services. Current customer GUI release: **0.5.3**, monitoring development owner preview; existing licence enforcement unchanged.
 
 Download the setup or portable package from a successful [Windows Actions run](https://github.com/meroobaba02-sudo/ZeeNetworkMonitor/actions). No Python is needed on the customer's laptop. Keep the entire portable folder together.
 
@@ -39,3 +39,7 @@ Admin Studio/licence work is paused. Current CI builds and publishes only Networ
 NOC GUI redesign: [screens, verified behavior and limitations](docs/NOC_GUI_v050.md).
 
 Discovery and measured alignment v0.5.1: [beginner launch, controls, authorization and limits](docs/DISCOVERY_ALIGNMENT_v051.md).
+
+Discovery across connected networks v0.5.3: [controls, separate results and limits](docs/DISCOVERY_ALL_NETWORKS_v052.md).
+
+In-app Wateen/Cloudflare download + upload setup: [instructions and limits](docs/WATEEN_SPEED_v053.md).

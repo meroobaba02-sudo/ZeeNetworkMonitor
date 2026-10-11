@@ -19,7 +19,7 @@ class SevenWanPanel(QWidget):
         for index,(title,fn) in enumerate([('Add modem',self.add),('Edit modem',self.edit),('WAN setup',self.setup),('Counter adapter',self.adapter),('Check all pings / traffic',self.poll),('Test selected',self.test_one),('Test all (sequential)',self.test_all),('Cancel tests',self.cancel_tests)]):
             if index==4:row=QHBoxLayout();layout.addLayout(row)
             b=QPushButton(title);b.clicked.connect(fn);row.addWidget(b)
-        self.status=QLabel('Manual tests use configured HTTPS endpoints and a per-modem daily data budget. Upload requires an authorized receiver.');self.status.setWordWrap(True);layout.addWidget(self.status)
+        self.status=QLabel('Manual tests use configured HTTPS endpoints and a per-modem daily data budget. Use WAN setup for ready download + upload endpoints; custom upload receivers require exact acknowledgement.');self.status.setWordWrap(True);layout.addWidget(self.status)
         browser=QHBoxLayout();layout.addLayout(browser)
         browser_note=QLabel('Browser tests use the laptop current Internet connection:');browser_note.setWordWrap(True);browser.addWidget(browser_note,1)
         for name,url in [('Open FAST.com','https://fast.com'),('Open Ookla','https://www.speedtest.net')]:

@@ -34,6 +34,7 @@ class Task(QRunnable):
                         if result['internet']=='Online':result['internet_latency_ms']=(time.monotonic()-started)*1000
                     except Exception:result['internet']='Unknown — TLS, route or external endpoint error'
         except telemetry_path_error() as e:result['error']=str(e)
+        except ValueError as e:result['error']=str(e) if self.speed else 'Measurement unavailable — invalid response or settings'
         except Exception:result['error']='Measurement unavailable — check route, endpoint, credentials and limits'
         result['at']=time.time();result['monotonic_at']=time.monotonic()
         result['source_ip']=self.source or 'Automatic (OS route)'

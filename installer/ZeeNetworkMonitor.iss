@@ -1,4 +1,4 @@
-#define MyAppVersion "0.5.1"
+#define MyAppVersion "0.5.3"
 [Setup]
 AppId={{A677BBD3-90CC-4BCE-9DBA-A13F709DBB48}
 AppName=Zee Network Monitor
@@ -11,7 +11,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 OutputDir=..\release
-OutputBaseFilename=ZeeNetworkMonitor-Setup-Windows-v0.5.1
+OutputBaseFilename=ZeeNetworkMonitor-Setup-Windows-v0.5.3
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

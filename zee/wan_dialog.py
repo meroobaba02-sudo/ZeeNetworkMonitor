@@ -45,8 +45,12 @@ class WanDialog(QDialog):
         self.source.textChanged.connect(lambda *_:self.verified.setChecked(False))
         self.counter_interface.textChanged.connect(lambda *_:self.counter_verified.setChecked(False))
         day=time.strftime('%Y-%m-%d');used=w.store.setting('speed-budget:'+d.id+':'+day,0)
-        note=QLabel(f'Today: {used/1048576:.2f} MiB reserved for tests. Failed tests retain the reservation. Internet speeds tests verify the Windows next hop on each actual TLS socket. Upload receiver must acknowledge JSON received_bytes. Live traffic requires verified WAN counters. Browser tests use the laptop current connection. Router ping and external HTTPS status are separate. HTTPS latency includes connection/TLS/server time. Rate cap limits reads, not guaranteed wire bandwidth.');note.setWordWrap(True);layout.addWidget(note)
+        note=QLabel(f'Today: {used/1048576:.2f} MiB reserved for tests. Failed tests retain the reservation. Internet speeds tests verify the Windows next hop on each actual TLS socket. Cloudflare upload uses its documented completed POST; custom receivers must acknowledge JSON received_bytes. Live traffic requires verified WAN counters. Browser tests use the laptop current connection. Router ping and external HTTPS status are separate. HTTPS latency includes connection/TLS/server time. Rate cap limits reads, not guaranteed wire bandwidth.');note.setWordWrap(True);layout.addWidget(note)
         preset=QPushButton('Use Cloudflare download-test setup');preset.clicked.connect(self.download_preset);layout.addWidget(preset)
+        full=QPushButton('Set up download + upload speed test');full.clicked.connect(self.full_preset);layout.addWidget(full)
+        wateen=QPushButton('Wateen setup: laptop 58.27.163.141 / gateway 58.27.163.137');wateen.clicked.connect(self.wateen_preset);layout.addWidget(wateen)
+        self.upload_protocol=p.get('upload_protocol','exact-ack')
+        self.fields['upload_url'].textChanged.connect(self.upload_endpoint_changed)
         hint=QLabel('Gateway = the modem Internet next hop, not necessarily its management/ping IP. Source = an IP assigned to this laptop. Seven modems on one switch need correct Windows routes or separate interfaces; the software cannot select a modem by ping IP alone.');hint.setWordWrap(True);layout.addWidget(hint)
         self.check=QPushButton('Inspect Internet route / adapters (read-only)');self.check.clicked.connect(self.inspect);layout.addWidget(self.check)
         self.report=QTextEdit();self.report.setReadOnly(True);layout.addWidget(self.report,1)
@@ -61,6 +65,21 @@ class WanDialog(QDialog):
         self.verified.setChecked(False)
         self.report.setPlainText('Download endpoint configured. Inspect the Internet route, enter the actual next hop, verify this WAN path, then Save. Upload still requires an authorized receiver. No test has started.')
 
+    def upload_endpoint_changed(self,text):
+        if text.strip()!='https://speed.cloudflare.com/__up':self.upload_protocol='exact-ack'
+
+    def full_preset(self):
+        self.download_preset()
+        self.fields['speed_url'].setText('https://speed.cloudflare.com/__down?bytes=8388608')
+        self.fields['upload_url'].setText('https://speed.cloudflare.com/__up');self.upload_protocol='cloudflare'
+        for key,value in [('speed_mb',8),('upload_mb',2),('speed_seconds',30),('daily_mb',200)]:self.fields[key].setValue(value)
+        self.report.setPlainText('Download + upload configured: up to 10 MiB per test, 30 seconds per transfer. Save your source/gateway and confirm this WAN setup, then Start Test. Each TLS connection checks the actual Windows next hop before sending a speed payload. Results are measured HTTPS throughput, not guaranteed maximum line capacity or an Ookla result. No test has started.')
+
+    def wateen_preset(self):
+        self.full_preset();self.source.setText('58.27.163.141');self.fields['speed_gateway'].setText('58.27.163.137')
+        self.verified.setChecked(False)
+        self.report.append('Wateen values filled from your confirmed laptop configuration. This does not change Windows IPs or routes. Confirm this is your connected Wateen adapter before saving.')
+
     def inspect(self):
         self.check.setEnabled(False);self.report.setPlainText('Inspecting local route...')
         QThreadPool.globalInstance().start(RouteTask(self.fields['speed_url'].text().strip() or self.fields['internet_url'].text().strip() or 'https://speed.cloudflare.com/__down?bytes=0',self.source.text().strip(),self.signals))
@@ -68,9 +87,8 @@ class WanDialog(QDialog):
     def value(self):
         p=dict(self.d.integration)
         for key,widget in self.fields.items():p[key]=widget.text().strip() if isinstance(widget,QLineEdit) else widget.value()
-        p.update(automatic_speed=self.auto.isChecked(),wan_verified=self.verified.isChecked(),wan_interface=self.counter_interface.text().strip(),wan_counter_verified=self.counter_verified.isChecked());validate_profile(p)
+        p.update(automatic_speed=self.auto.isChecked(),wan_verified=self.verified.isChecked(),wan_interface=self.counter_interface.text().strip(),wan_counter_verified=self.counter_verified.isChecked(),upload_protocol=self.upload_protocol);validate_profile(p)
         source=self.source.text().strip()
-        if source!=(self.d.source or self.w.current_page().source_ip):p['wan_verified']=False
         d=replace(self.d,integration=p,source=source);d.validate();return d
     def accept(self):
         try:
