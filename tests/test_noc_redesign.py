@@ -118,10 +118,10 @@ def test_noc_startup_backup_is_once_and_preserves_existing_data(tmp_path):
 
 def test_discovery_positive_results_with_optional_dns_filter_and_progress(window,app,monkeypatch):
     from zee import discovery
-    monkeypatch.setattr(discovery,'neighbours',lambda:{'192.0.2.1':'00-11-22-33-44-55'});monkeypatch.setattr(discovery,'reverse_name',lambda host:'gateway.example.test')
-    p=window.discovery;p.probe_fn=lambda d:Result(True,3);p.subnet.setText('192.0.2.0/30');p.resolve.setChecked(True);p.begin();spin(app,lambda:not p.running)
+    monkeypatch.setattr(QMessageBox,'question',lambda *args:QMessageBox.Yes);monkeypatch.setattr(discovery,'reverse_name',lambda host:'gateway.example.test')
+    p=window.discovery;p.probe_fn=lambda d:Result(True,3);p.subnet.setText('192.0.2.0/30');p.resolve.setChecked(True);p.authorize.setChecked(True);p.begin();spin(app,lambda:not p.running)
     assert p.progress.value()==2 and len(p.rows)==2 and all(r['hostname']=='gateway.example.test' for r in p.rows)
-    assert p.rows[0]['vendor']=='Unavailable';p.filter.setText('00-11');assert p.table.rowCount()==1 and p.table.item(0,0).text()=='192.0.2.1'
+    assert p.rows[0]['vendor']=='Unavailable';p.filter.setText('192.0.2.1');assert p.table.rowCount()==1 and p.table.item(0,0).text()=='192.0.2.1'
 
 def test_topology_radio_health_reacts_to_fresh_and_stale_measurements(window):
     from dataclasses import replace

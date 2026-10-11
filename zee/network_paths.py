@@ -18,9 +18,10 @@ def normalize_interfaces(payload):
     return sorted(result,key=lambda r:(r['index'],r['ip']))
 
 
-def interfaces():
+def interfaces(connected_only=False):
     if os.name=='nt':
         command="Get-NetIPAddress | Select-Object IPAddress,InterfaceAlias,InterfaceIndex,PrefixLength | ConvertTo-Json -Compress"
+        if connected_only:command="$up=@(Get-NetIPInterface -AddressFamily IPv4 -ConnectionState Connected | Select-Object -ExpandProperty InterfaceIndex); Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred | Where-Object { $_.InterfaceIndex -in $up } | Select-Object IPAddress,InterfaceAlias,InterfaceIndex,PrefixLength | ConvertTo-Json -Compress"
         try:result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',command],capture_output=True,text=True,errors='replace',timeout=20,creationflags=subprocess.CREATE_NO_WINDOW)
         except subprocess.TimeoutExpired:raise ValueError('Windows adapter inventory timed out; retry Read laptop IPs when Windows is ready.') from None
         if result.returncode:raise ValueError('Windows adapter inventory unavailable. Enter a local IP manually.')
