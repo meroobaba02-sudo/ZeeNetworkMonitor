@@ -39,6 +39,24 @@ def targets(value):
     if not values or any(ipaddress.ip_address(v).is_multicast or ipaddress.ip_address(v).is_unspecified or v=='255.255.255.255' for v in values):raise ValueError('Use unicast IPv4 targets.')
     return values
 
+def connected_plan(inventory, total_limit=8192):
+    """Unique connected IPv4 subnet per interface; no guessed remote ranges."""
+    plan=[];skipped=[];seen=set();total=0
+    for row in inventory:
+        try:
+            source=ipaddress.IPv4Address(row['ip']);network=ipaddress.IPv4Network(row['subnet'],strict=False)
+            if source.is_loopback or source.is_unspecified or source.is_multicast:continue
+            if source not in network:raise ValueError('Address is outside its subnet')
+            key=(int(row['index']),str(network))
+            if key in seen:continue
+            seen.add(key)
+            hosts=targets(str(network))
+            if total+len(hosts)>total_limit:raise ValueError('Combined scan exceeds 8,192 addresses')
+            total+=len(hosts);plan.append(dict(row,subnet=str(network),hosts=hosts))
+        except (ValueError,KeyError,TypeError) as e:
+            skipped.append(str(row.get('name','Adapter'))+' · '+str(row.get('subnet','unknown'))+' · '+str(e))
+    return plan,skipped
+
 
 def local_scope(hosts,source,inventory):
     # A public/third-party range always needs the explicit remote authorization.
