@@ -97,6 +97,9 @@ class PageControls:
             self.start_button.setText('▶ Start monitoring');self.reload()
         except (ValueError,OSError,KeyError,TypeError) as e:QMessageBox.warning(self,'Network operation failed',str(e))
     def show_details(self,d):
+        for dialog in self.details_windows:
+            if dialog.id==d.id and dialog.isVisible():dialog.raise_();dialog.activateWindow();return
+        self.details_windows=[dialog for dialog in self.details_windows if dialog.isVisible()]
         dialog=DeviceDetails(self,d);self.details_windows.append(dialog);dialog.show()
     def device_double_click(self,*args):
         d=self.selected()

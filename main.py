@@ -18,8 +18,10 @@ def main():
     parser.add_argument('--smoke-test',action='store_true')
     parser.add_argument('--screenshot',type=Path)
     parser.add_argument('--pilot-smoke-test',action='store_true')
+    parser.add_argument('--noc-smoke-test',action='store_true')
     args=parser.parse_args()
     if args.pilot_smoke_test and not args.smoke_test:parser.error('--pilot-smoke-test requires --smoke-test')
+    if args.noc_smoke_test and not args.smoke_test:parser.error('--noc-smoke-test requires --smoke-test')
     from PySide6.QtCore import Qt
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app=QApplication(sys.argv)
@@ -50,6 +52,8 @@ def main():
         from zee.core import VERSION
         pix=splash_pixmap(VERSION,app.primaryScreen().devicePixelRatio(),branding());splash=QSplashScreen(pix);splash.show();app.processEvents()
         store=Store(base/'monitor.sqlite3')
+        from zee.noc_widgets import prepare_backup
+        prepare_backup(store,VERSION)
         window=Window(store)
         assets=Path(getattr(sys,'_MEIPASS',Path(__file__).parent))/'assets'
         if (assets/'icon.png').exists():
@@ -65,6 +69,16 @@ def main():
         window.show()
         licence_timer_active=window.license_timer.isActive()
         if args.smoke_test:
+            if args.noc_smoke_test:
+                import json
+                routes=[]
+                for index in (8,7,9,0,11,10,4,1,5):
+                    window.tabs.setCurrentIndex(index);window.resize(980,650);app.processEvents()
+                    assert window.tabs.currentIndex()==index
+                    routes.append(window.nav_buttons[index].text())
+                window.seven_wan.cards.refresh()
+                (base/'noc-runtime-smoke.json').write_text(json.dumps({'version':VERSION,'routes':routes,'devices':len(store.devices()),'discovery_running':window.discovery.running,'alignment_state':window.alignment.session.state,'wan_cards':len(window.seven_wan.cards.cards),'configured_cards':sum(card.id is not None for card in window.seven_wan.cards.cards),'size':[window.width(),window.height()]}),encoding='utf-8')
+                window.tabs.setCurrentIndex(8)
             if args.pilot_smoke_test:
                 from zee.pilot_dialog import PilotDialog
                 import json

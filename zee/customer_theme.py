@@ -3,7 +3,7 @@ from PySide6.QtGui import QColor,QPalette,QPixmap,QPainter,QFont,QLinearGradient
 from PySide6.QtCore import Qt,QRectF
 
 THEMES={
- 'dark':dict(bg='#091522',panel='#101f30',raised='#172a3e',text='#e7eef8',muted='#a4b5c8',line='#2a4058',accent='#147d8b',selected='#194756'),
+ 'dark':dict(bg='#0b1220',panel='#121d2e',raised='#1b2b40',text='#e7eef8',muted='#a4b5c8',line='#2a4058',accent='#167dba',selected='#143e5f'),
  'light':dict(bg='#edf2f7',panel='#ffffff',raised='#e6edf5',text='#152a40',muted='#496078',line='#c5d3e0',accent='#087886',selected='#d2edf0')}
 
 def stylesheet(name='dark'):
@@ -15,7 +15,13 @@ QLabel {background:transparent;}
 QLabel#title {font-size:24px;font-weight:700;}
 QLabel#subtitle,QLabel#muted {color:%(muted)s;}
 QLabel#sectionTitle {font-size:16px;font-weight:700;}
-QLabel#metricValue {font-size:27px;font-weight:700;}
+QLabel#metricValue {font-size:28px;font-weight:700;}
+QLabel#signalValue {font-size:44px;font-weight:700;color:%(accent)s;}
+QLabel#connectionRates {font-size:17px;font-weight:600;}
+QLabel#alignmentGuidance {background:%(raised)s;border:1px solid %(line)s;border-radius:8px;padding:12px;}
+QLabel#statusChip {background:%(raised)s;border-radius:10px;padding:6px;}
+QProgressBar {background:%(raised)s;border:1px solid %(line)s;border-radius:5px;text-align:center;min-height:20px;}
+QProgressBar::chunk {background:%(accent)s;border-radius:4px;}
 QLabel#card,QLabel#mapCard {background:%(panel)s;border:1px solid %(line)s;border-radius:9px;padding:12px;font-size:16px;font-weight:600;}
 QLabel#mapEvents {background:%(panel)s;border:1px solid %(line)s;border-radius:8px;padding:10px;color:%(muted)s;}
 QLabel#detailTitle {font-size:20px;font-weight:700;}

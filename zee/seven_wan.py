@@ -2,7 +2,7 @@
 import time
 from PySide6.QtCore import Qt,QTimer,QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QTableWidget,QTableWidgetItem,QHeaderView,QMessageBox
+from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QTableWidget,QTableWidgetItem,QHeaderView,QMessageBox,QTabWidget
 
 class SevenWanPanel(QWidget):
     def __init__(self,w):
@@ -10,14 +10,18 @@ class SevenWanPanel(QWidget):
         layout=QVBoxLayout(self)
         title=QLabel('Internet connections');title.setObjectName('title');layout.addWidget(title)
         note=QLabel('Live = verified WAN traffic. Test = controlled HTTPS throughput. Start monitoring for live readings. Same-LAN modem IPs alone do not select separate Internet paths.');note.setWordWrap(True);layout.addWidget(note)
-        self.table=QTableWidget(7,9);self.table.setHorizontalHeaderLabels(['Modem / IP','Ping','Live ↓ Mbps','Live ↑ Mbps','Test ↓ Mbps','Test ↑ Mbps','Last test / age','WAN interface','Test status / path']);self.table.setSelectionBehavior(QTableWidget.SelectRows);self.table.setSelectionMode(QTableWidget.SingleSelection);self.table.setEditTriggers(QTableWidget.NoEditTriggers);self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents);self.table.horizontalHeader().setStretchLastSection(True);layout.addWidget(self.table,1)
+        self.views=QTabWidget();layout.addWidget(self.views,1)
+        from .noc_internet import InternetCards
+        self.cards=InternetCards(self);self.views.addTab(self.cards,'Connection cards')
+        detailed=QWidget();detail_layout=QVBoxLayout(detailed);self.views.addTab(detailed,'Detailed measurements')
+        self.table=QTableWidget(7,9);self.table.setHorizontalHeaderLabels(['Modem / IP','Ping','Live ↓ Mbps','Live ↑ Mbps','Test ↓ Mbps','Test ↑ Mbps','Last test / age','WAN interface','Test status / path']);self.table.setSelectionBehavior(QTableWidget.SelectRows);self.table.setSelectionMode(QTableWidget.SingleSelection);self.table.setEditTriggers(QTableWidget.NoEditTriggers);self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents);self.table.horizontalHeader().setStretchLastSection(True);detail_layout.addWidget(self.table,1)
         row=QHBoxLayout();layout.addLayout(row)
         for index,(title,fn) in enumerate([('Add modem',self.add),('Edit modem',self.edit),('WAN setup',self.setup),('Counter adapter',self.adapter),('Check all pings / traffic',self.poll),('Test selected',self.test_one),('Test all (sequential)',self.test_all),('Cancel tests',self.cancel_tests)]):
             if index==4:row=QHBoxLayout();layout.addLayout(row)
             b=QPushButton(title);b.clicked.connect(fn);row.addWidget(b)
         self.status=QLabel('Manual tests use configured HTTPS endpoints and a per-modem daily data budget. Upload requires an authorized receiver.');self.status.setWordWrap(True);layout.addWidget(self.status)
         browser=QHBoxLayout();layout.addLayout(browser)
-        browser.addWidget(QLabel('Browser tests use the laptop current Internet connection:'))
+        browser_note=QLabel('Browser tests use the laptop current Internet connection:');browser_note.setWordWrap(True);browser.addWidget(browser_note,1)
         for name,url in [('Open FAST.com','https://fast.com'),('Open Ookla','https://www.speedtest.net')]:
             b=QPushButton(name);b.clicked.connect(lambda checked=False,u=url:QDesktopServices.openUrl(QUrl(u)));browser.addWidget(b)
         browser.addStretch()
@@ -50,6 +54,18 @@ class SevenWanPanel(QWidget):
         self.w.drain()
         self.tick()
         self.status.setText('Ping checks requested. Start monitoring for recurring WAN counter readings; two counter samples are needed for live rates.')
+    def start_device(self,id):
+        d=next((d for d in self.modems() if d.id==id),None)
+        if not d:return
+        if self.active and self.active.id==id or any(x.id==id for x in self.queue):return
+        if not self.active and not self.queue:self.begin([d])
+        else:self.queue.append(d);self.messages[id]='Queued · another connection is testing';self.cards.refresh()
+    def stop_device(self,id):
+        self.queue=[d for d in self.queue if d.id!=id]
+        event=self.w.measurements.speed_cancels.get(id)
+        if event:event.set()
+        if id:self.messages[id]='Cancellation requested' if event else 'Removed from test queue'
+        self.cards.refresh()
     def test_one(self):
         d=self.device()
         if d:self.begin([d])
@@ -90,6 +106,7 @@ class SevenWanPanel(QWidget):
             if blocked or m.submit(d):self.poll_queue.pop(0)
         if self.isVisible():self.refresh()
     def refresh(self):
+        if self.cards.isVisible():self.cards.refresh()
         selected=self.device();devices=self.modems();self.table.setRowCount(max(7,len(devices)));now=time.time()
         def value(r,key,fresh):return f'{r[key]:.2f}' if fresh and key in r else 'Unavailable'
         for i in range(self.table.rowCount()):

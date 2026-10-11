@@ -1,4 +1,4 @@
-ZEE NETWORK MONITOR v0.4.18 — MONITORING TEST BUILD
+ZEE NETWORK MONITOR v0.5.0 — MONITORING TEST BUILD
 
 Filhal Admin Studio aur licence ka kaam paused hai. Normal owner preview ko pehle se activation ki zaroorat nahi. Existing signed builds ki licence protection unchanged hai. Sirf Network Monitor Setup install karen.
 
@@ -14,3 +14,9 @@ PERFORMANCE
 Advanced monitoring / history se worker limits aur intervals adjust ho sakte hain. Real-network pilot / support report se CPU/RAM recording aur fault evidence export karen. Asal hardware results abhi verify nahi hue.
 
 Details: MONITORING_ONLY.md, WAN_ALARM_FIX.md, PHASE10_REAL_NETWORK_PILOT.md.
+
+NOC GUI v0.5.0: Dashboard, Internet Monitor, Discovery, Network Map, Rocket M5 Monitor, Dish Alignment, Alerts & History, Device Manager, Settings.
+Discovery sirf Start Scan se chalti hai, subnet max 1,024 addresses. Add Selected Devices se pehle backup hota hai; duplicates skip hote hain.
+Dish Alignment signal se andazay ki direction nahin batata; manual adjustment tags aur measured sweeps chahiye. Saved results database backup mein shamil hain.
+Network Map configured Lahore–Sargodha schematic aur purana offline geographic map dono rakhta hai. Apne station/links configure karen; sample topology add nahin hoti.
+Details NOC_GUI_v050.md.

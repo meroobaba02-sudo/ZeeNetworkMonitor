@@ -80,7 +80,8 @@ def test_overview_empty_and_pagination_bounded_database_reads(app,tmp_path):
         for i in range(20):s.save(Device(name=f'WAN{i}',host='127.0.0.1',wan=i+1))
         w.reload();queries=[];s.db.set_trace_callback(queries.append);w.overview.refresh();s.db.set_trace_callback(None)
         assert len(w.overview.wan_cards)==7 and w.overview.table.rowCount()==8
-        assert not any('FROM samples' in q or 'FROM measurements' in q for q in queries)
+        assert sum('FROM samples' in q for q in queries)==1
+        assert not any('FROM measurements' in q for q in queries)
         ids={d.id for d in w.devices[7:14]};w.overview.move_wans(1);assert {c.id for c in w.overview.wan_cards}==ids
     finally:w.close()
 

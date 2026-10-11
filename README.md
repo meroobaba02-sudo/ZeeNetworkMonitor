@@ -1,6 +1,6 @@
 # Zee Network Monitor
 
-Windows desktop network monitor for towers, radios, WAN links and camera services. Current customer GUI release: **0.4.18**, monitoring development owner preview; existing licence enforcement unchanged.
+Windows desktop network monitor for towers, radios, WAN links and camera services. Current customer GUI release: **0.5.0**, monitoring development owner preview; existing licence enforcement unchanged.
 
 Download the setup or portable package from a successful [Windows Actions run](https://github.com/meroobaba02-sudo/ZeeNetworkMonitor/actions). No Python is needed on the customer's laptop. Keep the entire portable folder together.
 
@@ -32,6 +32,8 @@ Phase 9 adds a separate Admin Studio Windows installer, validated previous-licen
 
 Phase 10.1 delivers Settings > Real-network pilot / support report, 18 operator-recorded scenarios, opt-in CPU/RAM/storage/heartbeat capture, privacy-safe JSON export and an explicit commercial-release review gate. Actual hardware acceptance has not been performed. See [field pilot guide](docs/PHASE10_REAL_NETWORK_PILOT.md).
 
-Internet route inspection and delayed buzzer fixes: [v0.4.18 guide](docs/WAN_ALARM_FIX.md).
+Internet route inspection and delayed buzzer fixes: [v0.5.0 guide](docs/WAN_ALARM_FIX.md).
 
 Admin Studio/licence work is paused. Current CI builds and publishes only Network Monitor. See [monitoring-only guide](docs/MONITORING_ONLY.md). Historical owner tools remain in source for later work.
+
+NOC GUI v0.5.0 redesign: [screens, verified behavior and limitations](docs/NOC_GUI_v050.md).

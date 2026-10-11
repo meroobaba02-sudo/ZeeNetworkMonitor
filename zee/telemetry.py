@@ -1,13 +1,13 @@
 """Read-only explicit adapters. Device OIDs require firmware-specific verification."""
 import math,re,time,asyncio,json,base64,ipaddress
 from .connections import request,validate_url,service_check,connection
-METRICS={'signal_dbm','noise_dbm','snr_db','tx_ccq','rx_ccq','tx_mbps','rx_mbps','frequency_mhz','channel_width_mhz','uptime_s','ethernet_up','wireless_up','cpu_pct','memory_pct','in_octets','out_octets','counter_epoch'}
+METRICS={'signal_chain0_dbm','signal_chain1_dbm','signal_dbm','noise_dbm','snr_db','tx_ccq','rx_ccq','tx_mbps','rx_mbps','frequency_mhz','channel_width_mhz','uptime_s','ethernet_up','wireless_up','cpu_pct','memory_pct','in_octets','out_octets','counter_epoch'}
 DEFAULT_PROFILE={'method':'none','poll_seconds':30,'firmware_verified':False,'oids':{},'fields':{},'wan_verified':False,'internet_url':'','internet_marker':'','speed_url':'','speed_mb':1,'speed_seconds':5,'daily_mb':10,'automatic_speed':False,'speed_interval':900,'min_download_mbps':0,'loss_warning_pct':10,'signal_good':-60,'signal_poor':-80,'ccq_good':90,'ccq_poor':50,'snmp_version':'2c','rate_quality_enabled':False,'rate_good_mbps':100,'rate_poor_mbps':10,'internet_latency_warning_ms':1500,'service_alerts':False}
 DEFAULT_PROFILE.update(upload_url='',upload_mb=1,speed_gateway='',device_model='',firmware_version='',wan_interface='',wan_counter_verified=False)
 
 def clean_metrics(metrics):
     """Reject invalid units/enums without inventing replacements; retain Counter64 precision."""
-    bounds={'signal_dbm':(-130,0),'noise_dbm':(-150,0),'snr_db':(0,150),
+    bounds={'signal_chain0_dbm':(-130,0),'signal_chain1_dbm':(-130,0),'signal_dbm':(-130,0),'noise_dbm':(-150,0),'snr_db':(0,150),
             'tx_ccq':(0,100),'rx_ccq':(0,100),'cpu_pct':(0,100),'memory_pct':(0,100),
             'tx_mbps':(0,100000),'rx_mbps':(0,100000),'frequency_mhz':(1,100000),
             'channel_width_mhz':(1,1000),'uptime_s':(0,2**64-1),

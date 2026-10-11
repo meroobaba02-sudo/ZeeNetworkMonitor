@@ -42,13 +42,13 @@ class CustomerDashboard(QScrollArea):
         self.scope=label('', 'muted');layout.addWidget(self.scope)
         self.metrics_grid=QGridLayout();self.metrics_grid.setSpacing(12);layout.addLayout(self.metrics_grid)
         self.metrics=[]
-        for title in ['Configured devices','Replying now','Need attention','Other / not checked']:
+        for title in ['Monitored devices','Online devices','Warnings / no reply','Unknown / not checked','Internet connections','Wireless links','Current latency','Sampled loss / uptime','Active alerts','Recent ping failures','Unreachable devices','Internet offline']:
             card=QFrame();card.setObjectName('metricCard');box=QVBoxLayout(card);box.setContentsMargins(15,12,15,12);box.addWidget(label(title,'muted'));value=label('0','metricValue');box.addWidget(value);self.metrics.append((card,value))
         self.setup=QFrame();self.setup.setObjectName('setupCard');box=QVBoxLayout(self.setup);box.addWidget(label('Start with your real network','sectionTitle'));box.addWidget(label('1. Add a device and its IP.  2. Add towers on the map if needed.  3. Start monitoring. No sample devices or readings are added.'))
         row=QHBoxLayout();box.addLayout(row);row.addWidget(action('Add first device',w.add));row.addWidget(action('Add a tower',self.add_tower));row.addStretch();layout.addWidget(self.setup)
         tools=QHBoxLayout();layout.addLayout(tools)
         for title,fn in [('Add device',w.add),('Map / towers',lambda:w.tabs.setCurrentIndex(0)),('Topology / diagnosis',lambda:w.tabs.setCurrentIndex(3)),('All Internet connections',lambda:w.tabs.setCurrentIndex(7))]:tools.addWidget(action(title,fn))
-        section=QHBoxLayout();layout.addLayout(section);section_title=label('Internet connections','sectionTitle');section_title.setWordWrap(False);section.addWidget(section_title);section.addStretch();self.wan_count=label('', 'muted');self.wan_count.setWordWrap(False);section.addWidget(self.wan_count)
+        section=QHBoxLayout();layout.addLayout(section);section_title=label('Seven Internet connections','sectionTitle');section_title.setWordWrap(False);section.addWidget(section_title);section.addStretch();self.wan_count=label('', 'muted');self.wan_count.setWordWrap(False);section.addWidget(self.wan_count)
         self.previous=action('Previous',lambda:self.move_wans(-1));self.next=action('Next',lambda:self.move_wans(1));section.addWidget(self.previous);section.addWidget(self.next)
         self.no_wans=label('No modems configured. Open All Internet connections → Add modem.');layout.addWidget(self.no_wans)
         self.wan_grid=QGridLayout();self.wan_grid.setSpacing(12);layout.addLayout(self.wan_grid);self.wan_cards=[WanCard(w) for _ in range(7)]
@@ -64,9 +64,10 @@ class CustomerDashboard(QScrollArea):
     def add_tower(self):self.w.tabs.setCurrentIndex(0);self.w.map_page.add_tower()
     def move_wans(self,delta):self.wan_page=max(0,self.wan_page+delta);self.refresh()
     def reflow(self,columns):
-        if columns==self._columns:return
-        self._columns=columns
-        for i,(card,_) in enumerate(self.metrics):self.metrics_grid.addWidget(card,i//(2 if columns==2 else 4),i%(2 if columns==2 else 4))
+        metric_columns=4 if columns==3 else 3 if self.viewport().width()>=650 else 2
+        if columns==self._columns and metric_columns==getattr(self,'_metric_columns',None):return
+        self._columns=columns;self._metric_columns=metric_columns
+        for i,(card,_) in enumerate(self.metrics):self.metrics_grid.addWidget(card,i//metric_columns,i%metric_columns)
         for i,card in enumerate(self.wan_cards):self.wan_grid.addWidget(card,i//columns,i%columns)
     def resizeEvent(self,event):
         super().resizeEvent(event)
@@ -78,7 +79,20 @@ class CustomerDashboard(QScrollArea):
         if d:self.w.show_details(d)
     def refresh(self):
         w=self.w;now=time.time();devices=w.devices;states={d.id:w.state(d) for d in devices};counts=device_counts(devices,states)
-        for (_,widget),key in zip(self.metrics,['devices','online','attention','other']):widget.setText(str(counts[key]))
+        for (_,widget),key in zip(self.metrics[:4],['devices','online','attention','other']):widget.setText(str(counts[key]))
+        from .wan import wan_health
+        modems=[d for d in devices if d.wan or d.kind.startswith('WAN')];health=[wan_health(d,states[d.id],w.measurements.latest.get(d.id,{}),w.measurements.speed_latest.get(d.id,{}),now)[0] for d in modems]
+        self.metrics[4][1].setText(str(len(modems)));self.metrics[4][0].setToolTip(f'{health.count("Online")} Internet online / {health.count("Offline")} offline / {health.count("Unknown")} unknown; independence needs verified paths')
+        links={tuple(sorted((d.id,d.peer_id))) for d in devices if d.peer_id and any(x.id==d.peer_id for x in devices)};self.metrics[5][1].setText(str(len(links)));self.metrics[5][0].setToolTip('Configured wireless peer pairs; no physical links inferred')
+        latency=[w.latest[d.id]['latency'] for d in devices if states[d.id] in ('Online','Warning') and w.latest.get(d.id,{}).get('latency') is not None]
+        self.metrics[6][1].setText(f'{sum(latency)/len(latency):.1f} ms' if latency else '—');self.metrics[6][0].setToolTip('Mean latest fresh replying-device latency; excludes devices without a reading')
+        cached=[w._stats_cache[d.id] for d in devices if d.id in w._stats_cache and w._stats_cache[d.id]['n']];n=sum(r['n'] for r in cached);ok=sum(r['ok'] for r in cached);self.metrics[7][1].setText(f'{100*(n-ok)/n:.1f}% / {100*ok/n:.1f}%' if n else '—');self.metrics[7][0].setToolTip(f'Loss / sampled ICMP uptime, retained samples for {len(cached)} cached devices; not guaranteed service uptime')
+        self.metrics[8][1].setText(str(sum(d.id in w.alerted and states[d.id] in ('Warning','No reply') or d.id in w.telemetry_alerted and 0<=now-w.measurements.latest.get(d.id,{}).get('at',0)<=max(30,d.integration.get('poll_seconds',30)*3) for d in devices)))
+        if devices:
+            failures=w.store.db.execute('SELECT COUNT(*) FROM samples WHERE success=0 AND at>=? AND device IN ('+','.join('?' for _ in devices)+')',[now-3600]+[d.id for d in devices]).fetchone()[0]
+        else:failures=0
+        self.metrics[9][1].setText(str(failures));self.metrics[9][0].setToolTip('Failed ICMP samples in the last hour, selected network; not confirmed physical faults')
+        self.metrics[10][1].setText(str(sum(state=='No reply' for state in states.values())));self.metrics[11][1].setText(str(health.count('Offline')));self.metrics[11][0].setToolTip('Verified external Internet endpoint failures; an unreachable modem alone is not proof of an Internet outage')
         self.setup.setVisible(not devices)
         scope='All active networks are monitored; this overview shows the selected network.' if w.monitor_all_enabled else 'Monitoring scope: selected network.'
         self.scope.setText(w.current_page().name+' • '+('Monitoring running' if w.engine.running else 'Periodic monitoring stopped')+' • '+str(len(w.page_stations()))+' towers\n'+scope)

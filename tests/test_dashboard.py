@@ -33,5 +33,6 @@ def test_tower_filter_applied_before_event_limit(tmp_path):
         rows=w.event_rows();assert any(r['message']=='target retained' for r in rows)
         assert all(r['device'] in (target.id,tower.id) for r in rows)
         w.event_search.setText('retained');assert len(w.event_rows())==1
+        w.advanced_box.setChecked(True)
         assert not w.summary.isHidden()
     finally:w.close();store.db.close()

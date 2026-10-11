@@ -58,7 +58,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         shell: pwsh
         run: |
-          $setup = Join-Path $PWD 'release/ZeeNetworkMonitor-Setup-Windows-v0.4.18.exe'
+          $setup = Join-Path $PWD 'release/ZeeNetworkMonitor-Setup-Windows-v0.5.0.exe'
           $install = Join-Path $env:LOCALAPPDATA 'Programs/ZeeNetworkMonitor'
           $data = Join-Path $env:LOCALAPPDATA 'ZeeNetworkMonitor'
           New-Item -ItemType Directory -Force $data | Out-Null
@@ -83,14 +83,14 @@ jobs:
         with:
           name: ZeeNetworkMonitor-Setup-Windows
           path: |
-            release/ZeeNetworkMonitor-Setup-Windows-v0.4.18.exe
+            release/ZeeNetworkMonitor-Setup-Windows-v0.5.0.exe
             release/INSTALLER_TEST_REPORT.txt
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: ZeeNetworkMonitor-Portable-Windows
-          path: release/ZeeNetworkMonitor-Portable-Windows-v0.4.18.zip
+          path: release/ZeeNetworkMonitor-Portable-Windows-v0.5.0.zip
           if-no-files-found: error
           retention-days: 30
       - name: Upload test diagnostics

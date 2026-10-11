@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
 from .core import Device, Store, TYPES, VERSION, diagnoses, export_csv, outages
 from .engine import Engine
 from .page_controls import PageControls
+from .noc_widgets import icon as noc_icon
 
 COLORS = {'Online':'#36d399','Warning':'#fbbf24','No reply':'#fb7185','Unknown':'#9aacc0','Checking':'#60a5fa','Disabled':'#94a3b8','Probe error':'#fbbf24','Unconfigured':'#9aacc0'}
 from .customer_theme import stylesheet,apply_theme,status_color
@@ -268,17 +269,17 @@ class Window(PageControls,QMainWindow):
         apply_theme(QApplication.instance(),self.ui_theme)
         self.setWindowTitle(self.branding['app_name']+' • '+VERSION)
         self.resize(1360,790)
-        self.setMinimumSize(980,650)
+        self.setMinimumSize(900,640)
         root=QWidget()
         self.setCentralWidget(root)
         layout=QVBoxLayout(root)
-        layout.setContentsMargins(22,18,22,18)
+        layout.setContentsMargins(16,12,16,12)
         head=QHBoxLayout()
         titles=QVBoxLayout()
         title=QLabel(self.branding['app_name']);title.setTextFormat(Qt.PlainText)
         title.setObjectName('title')
         title.setStyleSheet('font-size:20px; font-weight:700;')
-        subtitle=QLabel('Network pages • Live map • Professional preview')
+        subtitle=QLabel('NETWORK OPERATIONS CENTER')
         subtitle.setObjectName('subtitle')
         titles.addWidget(title)
         titles.addWidget(subtitle)
@@ -288,6 +289,10 @@ class Window(PageControls,QMainWindow):
             from PySide6.QtGui import QPixmap
             logo=QPixmap();logo.loadFromData(base64.b64decode(self.branding['logo_png']),'PNG');logo_label=QLabel();logo_label.setPixmap(logo.scaled(64,64,Qt.KeepAspectRatio,Qt.SmoothTransformation));head.addWidget(logo_label)
         head.addStretch()
+        self.global_search=QLineEdit();self.global_search.setPlaceholderText('Search devices, IPs, stations…');self.global_search.setMaximumWidth(330);self.global_search.setMinimumWidth(160);head.addWidget(self.global_search,1)
+        self.monitor_status=QLabel('● Stopped');self.monitor_status.setObjectName('statusChip');head.addWidget(self.monitor_status)
+        self.notification_button=button('Alerts',lambda:self.tabs.setCurrentIndex(4));self.notification_button.setIcon(self.style().standardIcon(QStyle.SP_MessageBoxWarning));head.addWidget(self.notification_button)
+        settings_button=button('',lambda:self.tabs.setCurrentIndex(5));settings_button.setIcon(self.style().standardIcon(QStyle.SP_FileDialogDetailedView));settings_button.setToolTip('Settings and preferences');settings_button.setAccessibleName('Open Settings');head.addWidget(settings_button)
         self.mode_badge=QLabel('Professional Edition');self.mode_badge.setObjectName('subtitle');head.addWidget(self.mode_badge)
         layout.addLayout(head)
         head=QHBoxLayout()
@@ -316,7 +321,7 @@ class Window(PageControls,QMainWindow):
         content=QHBoxLayout()
         self.navigation=QVBoxLayout()
         nav_body=QWidget();nav_body.setLayout(self.navigation)
-        self.nav_scroll=QScrollArea();self.nav_scroll.setWidgetResizable(True);self.nav_scroll.setWidget(nav_body);self.nav_scroll.setFixedWidth(190);self.nav_scroll.setFrameShape(QScrollArea.NoFrame)
+        self.nav_scroll=QScrollArea();self.nav_scroll.setWidgetResizable(True);self.nav_scroll.setWidget(nav_body);self.nav_scroll.setObjectName('nocSidebar');self.nav_scroll.setFixedWidth(200);self.nav_scroll.setFrameShape(QScrollArea.NoFrame)
         content.addWidget(self.nav_scroll)
         content.addWidget(self.tabs,1)
         layout.addLayout(content,1)
@@ -374,6 +379,12 @@ class Window(PageControls,QMainWindow):
         self.seven_wan=SevenWanPanel(self);self.tabs.addTab(self.seven_wan,'Internet speeds')
         from .customer_dashboard import CustomerDashboard
         self.overview=CustomerDashboard(self);self.tabs.addTab(self.overview,'Overview')
+        from .discovery import DiscoveryPanel
+        from .alignment import AlignmentPanel
+        from .noc_radio import RadioPanel
+        self.discovery=DiscoveryPanel(self);self.tabs.addTab(self.discovery,'Network Discovery')
+        self.alignment=AlignmentPanel(self);self.tabs.addTab(self.alignment,'Dish Alignment')
+        self.radio_panel=RadioPanel(self);self.tabs.addTab(self.radio_panel,'Rocket M5 Monitor')
         self.page_picker=QComboBox();self.page_picker.setMaximumWidth(160);self.page_picker.currentIndexChanged.connect(self.change_page)
         self.navigation.addWidget(QLabel('NETWORK PAGE'));self.navigation.addWidget(self.page_picker)
         self.path_button=button('Network setup / paths',self.network_setup);self.navigation.addWidget(self.path_button)
@@ -386,16 +397,18 @@ class Window(PageControls,QMainWindow):
         self.radios_button=button('Connect tower radios',self.connect_radios);self.navigation.addWidget(self.radios_button)
         self.advanced_box=QCheckBox('Advanced controls');self.advanced_box.setToolTip('Shows additional setup tools; this is a display preference, not administrator access.');self.navigation.addWidget(self.advanced_box)
         self.nav_buttons=[]
-        for i,text in enumerate(['◉  Map','▤  Devices / WANs','◷  History','⌁  Topology','♧  Alerts','⚙  Settings','◈  WAN / Radio','⇅  Internet speeds','▦  Overview']):
-            b=QPushButton(text);b.setObjectName('nav');b.setCheckable(True);b.setFixedWidth(166)
-            b.clicked.connect(lambda checked=False,index=i:self.tabs.setCurrentIndex(index))
-            if i==8:self.navigation.insertWidget(7,b)
-            else:self.navigation.addWidget(b)
-            self.nav_buttons.append(b)
+        labels=['Network Map','Device Manager','Ping History','Link Diagnosis','Alerts & History','Settings','Adapter Tools','Internet Monitor','Dashboard','Network Discovery','Dish Alignment','Rocket M5 Monitor']
+
+        for i,title in enumerate(labels):
+            b=QPushButton(title);b.setObjectName('nav');b.setCheckable(True);b.setIcon(noc_icon(title));b.setFixedHeight(40);b.setAccessibleName(title);b.clicked.connect(lambda checked=False,index=i:self.tabs.setCurrentIndex(index));self.nav_buttons.append(b)
+        for i in (8,7,9,0,11,10,4,1,5,2,3,6):self.navigation.addWidget(self.nav_buttons[i])
         self.navigation.addStretch()
         self.tabs.currentChanged.connect(self.highlight_nav)
         self.advanced_box.toggled.connect(self.set_advanced)
         self.set_advanced(self.store.setting('advanced_ui',False),persist=False)
+        self.global_search.textChanged.connect(self.search.setText)
+        self.search.textChanged.connect(lambda value:self.global_search.setText(value) if self.global_search.text()!=value else None)
+        self.global_search.returnPressed.connect(lambda:self.tabs.setCurrentIndex(1))
         self.tabs.setCurrentIndex(8);self.highlight_nav(8)
         self.install_shortcuts()
         self.tray=QSystemTrayIcon(self.style().standardIcon(QStyle.SP_ComputerIcon),self)
@@ -436,6 +449,7 @@ class Window(PageControls,QMainWindow):
         self.allowed_device_ids=self.policy.selected(self.store.devices())
         for index,feature in [(0,'map'),(6,'wireless'),(7,'wan')]:
             allowed=any(self.policy.allows(f) for f in ('wan','wireless','cctv')) if index==6 else self.policy.allows(feature);self.tabs.setTabEnabled(index,allowed);self.nav_buttons[index].setEnabled(allowed);self.nav_buttons[index].setToolTip('' if allowed else 'Not included in this package')
+        for index,feature in [(9,'monitoring'),(10,'wireless'),(11,'wireless')]:self.tabs.setTabEnabled(index,self.policy.allows(feature));self.nav_buttons[index].setEnabled(self.policy.allows(feature))
         self.start_button.setEnabled(self.policy.allows('monitoring'))
         self.mode_badge.setToolTip('Package limit: '+str(self.policy.max_devices)+' devices; features: '+', '.join(sorted(self.policy.features)))
         count=len(self.store.devices())
@@ -582,10 +596,11 @@ class Window(PageControls,QMainWindow):
             widget=getattr(self,name,None)
             if widget:widget.blockSignals(True);widget.setChecked(enabled);widget.blockSignals(False)
         if hasattr(self,'nav_buttons'):
-            for index in (2,6):self.nav_buttons[index].setVisible(enabled or self.tabs.currentIndex()==index)
+            for index in (2,3,6):self.nav_buttons[index].setVisible(enabled or self.tabs.currentIndex()==index)
             for widget in (self.path_button,self.pages_button,self.radios_button):widget.setVisible(enabled)
             self.monitor_all_box.setVisible(enabled or self.monitor_all_enabled)
-        self.mode_badge.setText('Advanced controls' if enabled else 'Simple view')
+        self.mode_badge.setText('Advanced' if enabled else 'NOC')
+        self.summary.setVisible(enabled)
 
     def focus_device_search(self):
         self.tabs.setCurrentIndex(1);self.search.setFocus();self.search.selectAll()
@@ -652,8 +667,11 @@ class Window(PageControls,QMainWindow):
     def highlight_nav(self,index):
         if not self.tabs.isTabEnabled(index):self.tabs.setCurrentIndex(8);return
         for i,b in enumerate(self.nav_buttons):b.setChecked(i==index)
-        self.summary.setVisible(True)
+        self.summary.setVisible(self.store.setting('advanced_ui',False))
         if hasattr(self,'advanced_box'):self.set_advanced(self.advanced_box.isChecked(),persist=False)
+        if hasattr(self,'seven_wan') and index==7:self.seven_wan.refresh()
+        if hasattr(self,'radio_panel') and index==11:self.radio_panel.refresh()
+        if hasattr(self,'alignment') and index==10:self.alignment.refresh_devices()
         self._dirty=True
         if hasattr(self,'view_timer'):self.refresh_states()
 
@@ -710,6 +728,9 @@ class Window(PageControls,QMainWindow):
 
     def refresh_states(self):
         self.sync_incidents()
+        self.monitor_status.setText('● Monitoring' if self.engine.running else '● Stopped')
+        self.monitor_status.setStyleSheet('color:'+status_color('Online' if self.engine.running else 'Unknown',self.ui_theme))
+        active=len(set(self.alerted)|set(self.telemetry_alerted));self.notification_button.setText('Alerts · '+str(active))
         usage=self.resource_usage.sample()
         ram=f"{usage['working_set_mb']} MB" if usage['working_set_mb'] is not None else 'Unavailable'
         self.resource_label.setText(f"CPU {usage['cpu_percent_one_core']}% • RAM {ram}")
@@ -724,6 +745,7 @@ class Window(PageControls,QMainWindow):
             elif tab==4:self.render_events()
             elif tab==6:self.pro_panel.refresh()
             elif tab==8:self.overview.refresh()
+            elif tab==11:self.radio_panel.refresh()
             self._dirty=False;self._last_view_key=key
         self.refresh_map(False)
         self.update_mobile()
@@ -1148,7 +1170,8 @@ class Window(PageControls,QMainWindow):
         if getattr(self,'pilot_capture',None):
             try:self.pilot_capture.stop()
             except Exception:__import__('logging').warning('Pilot evidence could not be saved during shutdown.')
-        for dialog in self.details_windows:dialog.close()
+        for dialog in list(self.details_windows):dialog.close()
+        self.discovery.shutdown();self.alignment.shutdown();self.radio_panel.shutdown()
         self.pro_panel.timer.stop()
         self.seven_wan.timer.stop()
         self.license_timer.stop()

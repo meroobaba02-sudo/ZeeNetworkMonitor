@@ -154,7 +154,7 @@ class DeviceDetails(QDialog):
             from .cctv import camera_health
             lines.append('Camera service health: '+camera_health(d,r,time.time()))
         lines+=['Last collection: '+(time.strftime('%H:%M:%S',time.localtime(r['at'])) if r else 'Never')+(' • STALE' if r and age>max(30,d.integration.get('poll_seconds',30)*3) else '')]
-        lines+=[f'{k}: {m.get(k,"Unavailable")}' for k in ['signal_dbm','noise_dbm','snr_db','tx_ccq','rx_ccq','tx_mbps','rx_mbps','frequency_mhz','channel_width_mhz','uptime_s','ethernet_up','wireless_up','cpu_pct','memory_pct']]
+        lines+=[f'{k}: {m.get(k,"Unavailable")}' for k in ['signal_dbm','signal_chain0_dbm','signal_chain1_dbm','noise_dbm','snr_db','tx_ccq','rx_ccq','tx_mbps','rx_mbps','frequency_mhz','channel_width_mhz','uptime_s','ethernet_up','wireless_up','cpu_pct','memory_pct']]
         if geo:lines.append(f'Distance {geo[0]:.2f} km • initial bearing {geo[1]:.1f}° • elevation guidance unavailable')
         rows=self.w.store.measurements(d.id,time.time()-3600,1000)
         metric=self.trend_metric.currentData();scores=[quality(x.get('metrics',{}),d.integration)[0] if metric=='quality' else x.get('metrics',{}).get(metric) for x in rows]
@@ -169,7 +169,8 @@ class DeviceDetails(QDialog):
         elif not fresh or score is None:self.previous=None;self.previous_at=None;lines.append('Alignment feedback paused: readings stale or unavailable')
         lines.append(r.get('telemetry_error',r.get('method','No telemetry collected')));self.text.setText('\n'.join(lines))
         self.events.setPlainText('\n'.join(x['message'] for x in self.w.store.events(d.id,limit=5)))
-    def closeEvent(self,event):self.timer.stop();event.accept()
+    def closeEvent(self,event):
+        self.timer.stop();self.w.details_windows=[d for d in self.w.details_windows if d is not self];event.accept();self.deleteLater()
 
 class ProfessionalPanel(QWidget):
     def __init__(self,w):

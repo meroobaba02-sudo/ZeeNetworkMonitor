@@ -4,7 +4,7 @@ import random
 import time
 from PySide6.QtCore import Qt,QPointF,QRectF,Signal,QObject,QRunnable,QThreadPool
 from PySide6.QtGui import QColor,QPainter,QPen,QPainterPath,QFont
-from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QLineEdit,QFrame,QTextEdit,QSplitter,QScrollArea,QComboBox,QDialog,QMessageBox,QFileDialog,QInputDialog)
+from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QLineEdit,QFrame,QTextEdit,QSplitter,QScrollArea,QComboBox,QDialog,QMessageBox,QFileDialog,QInputDialog,QStackedWidget,QGridLayout)
 from .customer_theme import status_color
 from .core import diagnoses,Device
 from . import regionmap
@@ -270,15 +270,18 @@ class MapDashboard(QWidget):
         for label in ('Devices','Online','Warnings','No reply'):
             card=QLabel('0\n'+label);card.setObjectName('mapCard');cards.addWidget(card);self.cards.append(card)
         layout.addLayout(cards)
-        tools=QHBoxLayout()
+        tools=QGridLayout()
         self.search=QLineEdit();self.search.setPlaceholderText('Search map devices / locations…');self.search.textChanged.connect(self.filter)
-        tools.addWidget(self.search)
-        for title,fn in [('Add tower',self.add_tower),('Add device',window.add),('Map options',self.map_options)]:
-            b=QPushButton(title);b.clicked.connect(fn);tools.addWidget(b)
+        tools.addWidget(self.search,0,0,1,2)
+        for index,(title,fn) in enumerate([('Add tower',self.add_tower),('Add device',window.add),('Map options',self.map_options)]):
+            b=QPushButton(title);b.clicked.connect(fn);tools.addWidget(b,0 if index<2 else 1,index+2 if index<2 else 0)
         layout.addLayout(tools)
         split=QSplitter(Qt.Horizontal)
         self.canvas=MapCanvas(window);self.canvas.selected.connect(self.select);self.canvas.moved.connect(self.move)
-        split.addWidget(self.canvas)
+        from .noc_topology import TopologyPanel
+        self.noc_topology=TopologyPanel(window);self.map_views=QStackedWidget();self.map_views.addWidget(self.noc_topology);self.map_views.addWidget(self.canvas);split.addWidget(self.map_views)
+        topology_button=QPushButton('Configured topology');topology_button.clicked.connect(lambda:self.map_views.setCurrentIndex(0));tools.addWidget(topology_button,1,1,1,2)
+        geographic_button=QPushButton('Offline geographic map');geographic_button.clicked.connect(lambda:self.map_views.setCurrentIndex(1));tools.addWidget(geographic_button,1,3)
         panel=QWidget();panel.setMinimumWidth(260);panel.setMaximumWidth(330);detail=QVBoxLayout(panel)
         self.tower_name=QLabel('');self.tower_name.setWordWrap(True);detail.addWidget(self.tower_name)
         self.radios=QComboBox();self.radios.currentIndexChanged.connect(self.choose_radio);detail.addWidget(self.radios)
@@ -387,7 +390,8 @@ class MapDashboard(QWidget):
         self.closing=True;self.map_pool.waitForDone()
 
     def filter(self,text):
-        self.canvas.query=text.casefold();self.canvas.update()
+        self.canvas.query=text.casefold();self.canvas.update();self.noc_topology.query=text.casefold();self.noc_topology.key=None
+        if self.noc_topology.isVisible():self.noc_topology.refresh()
 
     def device(self):
         return next((d for d in self.window.devices if d.id==self.selected_id),None)
@@ -425,7 +429,9 @@ class MapDashboard(QWidget):
         if d:self.window.edit_device(d)
 
     def refresh(self):
-        w=self.window;self.canvas.devices=list(w.devices);self.canvas.stations=w.page_stations();self.canvas.update()
+        w=self.window
+        if self.noc_topology.isVisible():self.noc_topology.refresh()
+        self.canvas.devices=list(w.devices);self.canvas.stations=w.page_stations();self.canvas.update()
         self.canvas.map_label.setText(('Zhob–Sambaza • offline roads map • '+regionmap.ATTRIBUTION) if self.map_data else 'Zhob–Sambaza • GPS grid only • Map options → Download roads')
         st=next((st for st in self.canvas.stations if st.id==self.station_id),None)
         self.radios.blockSignals(True);self.radios.clear()
